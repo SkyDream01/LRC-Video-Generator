@@ -94,7 +94,7 @@ lrc2video/
 
 这意味着，当您发布、分享、或修改任何由本软件生成的视频时，您 **必须** 提供清晰、适当的署名。我们推荐您在视频简介或视频画面中包含以下文字：
 
-> **视频使用“高级歌词视频生成器”制作，项目地址：[https://github.com/SkyDream01/LRC-Video-Generator]**
+> **视频使用“LRC Video Generator”制作，项目地址：[https://github.com/SkyDream01/LRC-Video-Generator]**
 
 ------
 
