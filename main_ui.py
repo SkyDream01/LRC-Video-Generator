@@ -110,7 +110,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("高级歌词视频生成器 (v3.0 - 优化版)")
+        self.setWindowTitle("高级歌词视频生成器")
         self.setGeometry(100, 100, 950, 800)
 
         self.settings = QSettings("YourCompany", "AdvancedLyricVideo")
@@ -428,7 +428,7 @@ class MainWindow(QMainWindow):
             return
 
         project_data = {
-            "version": 3.0,
+            "version": 1.0,
             "file_paths": self.file_paths,
             "settings": {
                 "font_primary": self.font_combo_primary.currentText(),

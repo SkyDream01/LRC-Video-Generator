@@ -16,6 +16,14 @@ def get_static_background_filter(W, H, FPS, duration):
         f"zoompan=z=1:d={total_frames}:s={W}x{H}:fps={FPS}"
     )
 
+def get_breathing_shake_background_filter(W, H, FPS, duration):
+    """生成带有呼吸感和轻微摇晃效果的背景滤镜。"""
+    return (
+        f"scale={W*1.2}:-1,crop={W}:{H},boxblur=15:3,"
+        f"zoompan=z='1.05+0.05*sin(2*PI*t/10)':d={int(duration*FPS)}:s={W}x{H}:x='iw/2+(iw/2-iw/zoom)*sin(2*PI*t/15)':y='ih/2+(ih/2-ih/zoom)*cos(2*PI*t/10)',"
+        f"format=yuv420p"
+    )
+
 # --- 歌词动画 ---
 
 @lru_cache(maxsize=128)
@@ -115,13 +123,43 @@ def get_left_list_right_cover_animation(lyrics_with_ends, font_primary_escaped, 
 # --- 专辑封面动画 ---
 
 def get_static_cover_animation_filter(duration):
-    """生成静态封面图的滤镜（仅缩放）。"""
-    return "scale=w=500:h=500,setsar=1"
+    """
+    生成静态封面图的滤镜。
+    修复：使用 zoompan 将静态图转为视频流，以确保在滤镜链中正常工作。
+    """
+    FPS = 60 # 视频帧率
+    total_frames = int(duration * FPS) if duration > 1 else 1
+    return (
+        f"scale=w=500:h=500,setsar=1,"
+        f"zoompan=z=1:d={total_frames}:s=500x500:fps={FPS}"
+    )
+
+def get_vinyl_record_animation_filter(duration):
+    """
+    生成一个圆形、旋转的仿黑胶唱片动画（最终兼容版）。
+    修复：使用 f-string 修复了旋转速度变量未被正确格式化到字符串中的问题。
+    """
+    FPS = 60  # 视频帧率
+    total_frames = int(duration * FPS) if duration > 1 else 1
+    # 速度：每10秒一圈
+    rotation_speed_per_sec = (2 * 3.1415926535) / 10
+
+    # 最终修复：使用 f-string 将 rotation_speed_per_sec 变量的值嵌入
+    # 并将滤镜链中每一行都变为f-string确保格式正确
+    return (
+        f"scale=w=500:h=500,setsar=1,"
+        f"zoompan=z=1:d={total_frames}:s=500x500:fps={FPS},"
+        f"format=yuva444p,"
+        f"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
+        f"a='if(lte((X-W/2)*(X-W/2)+(Y-H/2)*(Y-H/2),(W/2)*(W/2)),255,0)',"
+        f"rotate=a=t*{rotation_speed_per_sec}:c=none"
+    )
 
 # --- 定义动画预设字典 ---
 
 BACKGROUND_ANIMATIONS = {
     "静态模糊": get_static_background_filter,
+    "呼吸摇晃": get_breathing_shake_background_filter,
 }
 
 TEXT_ANIMATIONS = {
@@ -131,4 +169,5 @@ TEXT_ANIMATIONS = {
 
 COVER_ANIMATIONS = {
     "静态": get_static_cover_animation_filter,
+    "唱片旋转": get_vinyl_record_animation_filter,
 }
