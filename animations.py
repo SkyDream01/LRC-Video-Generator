@@ -38,7 +38,8 @@ def get_slide_and_fade_text_animation(lyrics_with_ends, font_primary_escaped, fo
         alpha_expr = f"'if(lt(t,{start}+{FADE_DURATION}),(t-{start})/{FADE_DURATION},if(gt(t,{end}-{FADE_DURATION}),({end}-t)/{FADE_DURATION},1))'"
         y_slide_offset = f"if(lt(t,{start}+{FADE_DURATION}),({FADE_DURATION}-(t-{start}))/{FADE_DURATION}*{SLIDE_DISTANCE},0)"
         
-        x_pos = f"'((W*2/3)-text_w)/2'"
+        # 修改: 歌词在右侧黄金分割区域居中
+        x_pos = f"'(W/2.618) + (W*1.618/2.618 - text_w)/2'"
         
         if primary_text:
             y_pos_primary = f"'H/2 - ({font_size_primary}*1.5) - ({y_slide_offset})'"
@@ -65,7 +66,8 @@ def get_left_list_right_cover_animation(lyrics_with_ends, font_primary_escaped, 
     """在屏幕左侧生成滚动高亮歌词列表。"""
     W, H = 1920, 1080
     list_line_height = font_size_primary + font_size_secondary + 25
-    list_x_pos = f"'(W*2/3 - text_w)/2'"
+    # 修改: 歌词列表在右侧黄金分割区域居中
+    list_x_pos = f"'(W/2.618) + (W*1.618/2.618 - text_w)/2'"
     TRANSITION_DURATION = 0.2
     FADE_DISTANCE_LINES = (H * 6 / 8 / 2) / list_line_height * 1.5
 
@@ -140,7 +142,7 @@ def get_vinyl_record_animation_filter(duration):
 
     # 定义8x超采样和最终尺寸
     ss = 8
-    orig_W, orig_H = 600, 600
+    orig_W, orig_H = 640, 640
     W, H = orig_W * ss, orig_H * ss
     R = W / 2
 

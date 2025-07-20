@@ -78,8 +78,8 @@ def _build_filter_complex(
     cover_filter_str = cover_anim_func(duration=duration)
     filters.append(f"[0:v]{cover_filter_str}[fg_cover]")
 
-    # 3. 叠加背景和封面
-    filters.append("[blurred_bg][fg_cover]overlay=x='(W*2/3)+((W/3)-w)/2':y='(H-h)/2'[final_bg]")
+    # 3. 叠加背景和封面 (黄金比例布局)
+    filters.append("[blurred_bg][fg_cover]overlay=x='(W/2.618-w)/2':y='(H-h)/2'[final_bg]")
 
     # 4. 歌词动画
     base_filter = "[final_bg]"
