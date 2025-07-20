@@ -123,29 +123,48 @@ def get_static_cover_animation_filter(duration):
     FPS = 60 # 视频帧率
     total_frames = int(duration * FPS) if duration > 1 else 1
     return (
-        f"scale=w=500:h=500,setsar=1,"
-        f"zoompan=z=1:d={total_frames}:s=500x500:fps={FPS}"
+        f"scale=w=600:h=600,setsar=1,"
+        f"zoompan=z=1:d={total_frames}:s=600x600:fps={FPS}"
     )
 
 def get_vinyl_record_animation_filter(duration):
     """
-    生成一个圆形、旋转的仿黑胶唱片动画（最终兼容版）。
-    修复：使用 f-string 修复了旋转速度变量未被正确格式化到字符串中的问题。
+    生成一个圆形、旋转的仿黑胶唱片动画。
+    这张“唱片”中心是圆形专辑图，外圈是带有模拟唱片纹理的黑色区域，中心有一个带黑边的孔。
     """
-    FPS = 60  # 视频帧率
+    FPS = 60
     total_frames = int(duration * FPS) if duration > 1 else 1
-    # 速度：每10秒一圈
-    rotation_speed_per_sec = (2 * 3.1415926535) / 10
+    rotation_speed_per_sec = (2 * 3.1415926535) / 10  # 每10秒旋转一圈
 
-    # 最终修复：使用 f-string 将 rotation_speed_per_sec 变量的值嵌入
-    # 并将滤镜链中每一行都变为f-string确保格式正确
+    W, H = 600, 600  # 定义动画画布尺寸
+    R_disc2 = (W / 2)**2
+    R_hole2 = (W / 2 * 0.05)**2 # 中心透明孔区域半径为总半径的5%
+    R_black_ring2 = (W / 2 * 0.15)**2 # 中心孔+黑环区域半径为15%
+    R_label2 = (W / 2 * 0.8)**2  # 唱片贴纸区域半径为总半径的80%
+
+    # 计算距中心点距离的平方的表达式
+    D2 = '(pow(X-W/2,2)+pow(Y-H/2,2))'
+
+    # Alpha通道（透明度）表达式：在唱片外和中心孔内为透明
+    alpha_expr = f"'if(lte({D2},{R_disc2})*gte({D2},{R_hole2}),255,0)'"
+
+    # 颜色通道表达式：
+    # - 在黑环内：显示黑色 (0)
+    # - 在贴纸半径内：显示原始封面图像 (r(X,Y), g(X,Y), b(X,Y))
+    # - 在贴纸外、唱片边缘内：显示带有纹理的黑色胶片区域
+    groove_texture = f"8+8*sin(sqrt({D2})*3)"
+    color_expr = f"if(lt({D2},{R_black_ring2}), 0, if(lt({D2},{R_label2}), LUM, {groove_texture}))"
+
     return (
-        f"scale=w=500:h=500,setsar=1,"
-        f"zoompan=z=1:d={total_frames}:s=500x500:fps={FPS},"
+        f"scale=w={W}:h={H},setsar=1,"
+        f"zoompan=z=1:d={total_frames}:s={W}x{H}:fps={FPS},"
         f"format=yuva444p,"
-        f"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
-        f"a='if(lte((X-W/2)*(X-W/2)+(Y-H/2)*(Y-H/2),(W/2)*(W/2)),255,0)',"
-        f"rotate=a=t*{rotation_speed_per_sec}:c=none"
+        f"geq="
+        f"r='{color_expr.replace('LUM', 'r(X,Y)')}':"
+        f"g='{color_expr.replace('LUM', 'g(X,Y)')}':"
+        f"b='{color_expr.replace('LUM', 'b(X,Y)')}':"
+        f"a={alpha_expr},"
+        f"rotate=a=t*{rotation_speed_per_sec}:c=none:ow={W}:oh={H}"
     )
 
 # --- 定义动画预设字典 ---
