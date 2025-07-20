@@ -50,7 +50,8 @@ def _build_filter_complex(
     font_secondary, font_size_secondary, color_secondary,
     outline_color, outline_width, logger,
     background_stream_idx, cover_stream_idx,
-    preview_time=None
+    preview_time=None,
+    is_preview=False
 ):
     """构建完整的FFmpeg filter_complex字符串。"""
     logger.status_update(f"构建滤镜图 (背景: {background_anim}, 歌词: {text_anim}, 封面: {cover_anim})...")
@@ -70,6 +71,33 @@ def _build_filter_complex(
     lyrics_with_ends = [(start, lrc_data[i + 1][0] if i + 1 < len(lrc_data) else duration, primary, secondary)
                         for i, (start, primary, secondary) in enumerate(lrc_data)]
 
+    # --- 优化: 仅在预览模式下筛选歌词 ---
+    visible_lyrics = lyrics_with_ends
+    if is_preview and preview_time is not None:
+        logger.status_update(f"优化预览: 筛选时间点 {preview_time:.2f}s 附近的歌词...")
+        current_lyric_index = -1
+        for i, (start, end, _, _) in enumerate(lyrics_with_ends):
+            if start <= preview_time < end:
+                current_lyric_index = i
+                break
+        
+        if current_lyric_index != -1:
+            if text_anim == "淡入淡出":
+                # "淡入淡出"模式一次只显示一句歌词
+                visible_lyrics = [lyrics_with_ends[current_lyric_index]]
+                logger.status_update("预览模式: 淡入淡出，只加载1行歌词。")
+            elif text_anim == "滚动列表":
+                # "滚动列表"模式需要上下文，加载一个窗口的歌词
+                window_size = 7  # 上下各7行，总共15行，足够覆盖动画效果
+                start_idx = max(0, current_lyric_index - window_size)
+                end_idx = min(len(lyrics_with_ends), current_lyric_index + window_size + 1)
+                visible_lyrics = lyrics_with_ends[start_idx:end_idx]
+                logger.status_update(f"预览模式: 滚动列表，加载了 {len(visible_lyrics)} 行歌词。")
+        else:
+            visible_lyrics = [] # 如果当前时间点没有歌词，则不显示任何歌词
+            logger.status_update("预览模式: 当前时间点无歌词。")
+
+
     filters = []
     # 1. 背景 (来自指定视频输入)
     bg_filter_str = background_anim_func(W=W, H=H, FPS=FPS, duration=duration)
@@ -84,9 +112,9 @@ def _build_filter_complex(
 
     # 4. 歌词动画
     base_filter = "[final_bg]"
-    if lyrics_with_ends:
+    if visible_lyrics: # 使用筛选后的歌词列表
         full_drawtext_string = text_anim_func(
-            lyrics_with_ends=lyrics_with_ends,
+            lyrics_with_ends=visible_lyrics, # 传入筛选后的歌词
             font_primary_escaped=font_primary_escaped, font_size_primary=font_size_primary,
             color_primary_ffmpeg=to_ffmpeg_color(color_primary),
             font_secondary_escaped=font_secondary_escaped, font_size_secondary=font_size_secondary,
@@ -98,7 +126,8 @@ def _build_filter_complex(
     base_filter += ",format=yuv420p"
 
     # 5. 时间选择（用于预览）
-    if preview_time is not None:
+    if is_preview:
+        # 在预览模式下，总是使用 select 过滤器
         filters.append(f"{base_filter},select='eq(n\\,{int(preview_time * FPS)})'[v]")
     else:
         filters.append(f"{base_filter}[v]")
@@ -216,6 +245,7 @@ def _process_media(params, is_preview=False):
             "outline_width": params["outline_width"],
             "logger": logger,
             "preview_time": params.get("preview_time"),
+            "is_preview": is_preview, # 传递 is_preview 标志
             "cover_stream_idx": cover_stream_idx,
             "background_stream_idx": background_stream_idx
         }

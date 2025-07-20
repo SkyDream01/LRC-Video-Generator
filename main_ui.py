@@ -208,7 +208,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("LRC Video Generator")
-        self.setGeometry(100, 100, 1000, 850)
+        self.setGeometry(100, 100, 1100, 800)
         self.setStyleSheet(STYLESHEET)
 
         self.settings = QSettings("YourCompany", "LRCVideoGenerator")
@@ -225,7 +225,11 @@ class MainWindow(QMainWindow):
         self.font_dir = self.base_dir / 'font'
         self.temp_dir = Path(tempfile.gettempdir()) / 'lrc2video'
         self.temp_dir.mkdir(parents=True, exist_ok=True)
-        self.preview_image_path = ""
+        
+        # --- 优化: 增加用于存储预览图的成员变量 ---
+        self._preview_temp_file = ""
+        self._current_preview_pixmap = None
+
         self.audio_duration = 0
         self.lrc_metadata = {}
 
@@ -276,11 +280,9 @@ class MainWindow(QMainWindow):
 
         project_layout = QHBoxLayout()
         load_button = QPushButton(" 加载工程")
-        # 修正: 使用 QStyle 获取标准图标
         load_button.setIcon(self.style().standardIcon(QStyle.SP_DialogOpenButton))
         load_button.clicked.connect(self.load_project)
         save_button = QPushButton(" 保存工程")
-        # 修正: 使用 QStyle 获取标准图标
         save_button.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
         save_button.clicked.connect(self.save_project)
         project_layout.addWidget(load_button)
@@ -344,10 +346,15 @@ class MainWindow(QMainWindow):
         controls_layout.addWidget(self.preview_time_label)
 
         self.preview_button = QPushButton(" 生成预览")
-        # 修正: 使用 QStyle 获取标准图标
         self.preview_button.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         self.preview_button.clicked.connect(self.generate_preview)
         controls_layout.addWidget(self.preview_button)
+
+        # Create a container widget to hold the preview label
+        # This prevents the label's sizeHint from affecting the main layout
+        preview_container = QWidget()
+        preview_container_layout = QVBoxLayout(preview_container)
+        preview_container_layout.setContentsMargins(0, 0, 0, 0)
 
         self.preview_display = QLabel("加载音频文件后可进行预览")
         self.preview_display.setAlignment(Qt.AlignCenter)
@@ -355,8 +362,10 @@ class MainWindow(QMainWindow):
         self.preview_display.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.preview_display.setStyleSheet("background-color: #252627; color: #888; border: 1px dashed #555; border-radius: 5px;")
 
+        preview_container_layout.addWidget(self.preview_display)
+
         layout.addLayout(controls_layout)
-        layout.addWidget(self.preview_display, 1)
+        layout.addWidget(preview_container, 1) # Add the container to the main layout with stretch
         return group
 
     def _create_advanced_group(self):
@@ -413,7 +422,11 @@ class MainWindow(QMainWindow):
 
         self.file_paths[key] = path
         self.line_edits[key].setText(path)
-
+        
+        # 清除旧的预览图
+        self._current_preview_pixmap = None
+        self.preview_display.setText("文件已更改，请重新生成预览")
+        
         if key == "audio":
             self.get_audio_duration(path)
         elif key == "lrc":
@@ -425,6 +438,9 @@ class MainWindow(QMainWindow):
             self.file_paths[key] = ""
             self.line_edits[key].setText("")
             self.log_message(f"已清除 {key.capitalize()} 文件选择。")
+            # 清除旧的预览图
+            self._current_preview_pixmap = None
+            self.preview_display.setText("文件已更改，请重新生成预览")
 
     def get_audio_duration(self, audio_path):
         self.log_message("正在获取音频时长...")
@@ -508,10 +524,11 @@ class MainWindow(QMainWindow):
         if not params: return
 
         try:
-            # 使用更稳健的临时文件路径
-            self.preview_image_path = self.temp_dir / f"preview_{os.urandom(8).hex()}.png"
+            # --- 优化: 复用临时文件名 ---
+            if not self._preview_temp_file or not Path(self._preview_temp_file).parent.exists():
+                 self._preview_temp_file = self.temp_dir / f"preview_{os.urandom(8).hex()}.png"
 
-            params["output_image_path"] = str(self.preview_image_path)
+            params["output_image_path"] = str(self._preview_temp_file)
             params["preview_time"] = self.preview_slider.value() / 100.0
 
             self.log_message("--- 开始生成预览 ---")
@@ -535,18 +552,26 @@ class MainWindow(QMainWindow):
             self.log_message(f"预览生成失败: {error_message}")
             QMessageBox.critical(self, "预览失败", f"生成预览时发生错误:\n{error_message}")
             self.preview_display.setText("预览生成失败")
+            self._current_preview_pixmap = None
         else:
-            self.preview_display.setPixmap(pixmap.scaled(
-                self.preview_display.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
-            ))
+            # --- 优化: 保存原始pixmap并更新显示 ---
+            self._current_preview_pixmap = pixmap
+            self.update_preview_display()
             self.log_message("--- 预览生成成功 ---")
 
-        if self.preview_image_path and os.path.exists(self.preview_image_path):
-            try:
-                os.remove(self.preview_image_path)
-            except OSError:
-                pass
+        # --- 优化: 不再立即删除文件，在程序退出时清理 ---
+        # if self._preview_temp_file and os.path.exists(self._preview_temp_file):
+        #     try:
+        #         os.remove(self._preview_temp_file)
+        #     except OSError:
+        #         pass
 
+    def update_preview_display(self):
+        """根据窗口大小缩放并显示当前预览图"""
+        if self._current_preview_pixmap and not self._current_preview_pixmap.isNull():
+            self.preview_display.setPixmap(self._current_preview_pixmap.scaled(
+                self.preview_display.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
+            ))
 
     def save_project(self):
         default_filename = "untitled.kproj"
@@ -630,6 +655,10 @@ class MainWindow(QMainWindow):
             if ffmpeg_path_val := s.get("ffmpeg_path"):
                 self.ffmpeg_path = ffmpeg_path_val
                 self.ffmpeg_path_edit.setText(self.ffmpeg_path)
+                
+            # 清除旧的预览图
+            self._current_preview_pixmap = None
+            self.preview_display.setText("工程已加载，请生成预览")
 
             self.log_message(f"工程文件加载成功: {path}")
 
@@ -857,22 +886,17 @@ class MainWindow(QMainWindow):
         # 清理整个临时目录
         try:
             import shutil
-            shutil.rmtree(self.temp_dir)
-            self.log_message(f"已清理临时目录: {self.temp_dir}")
+            if self.temp_dir.exists():
+                shutil.rmtree(self.temp_dir)
+                self.log_message(f"已清理临时目录: {self.temp_dir}")
         except OSError as e:
             self.log_message(f"清理临时目录失败: {e}")
         super().closeEvent(event)
 
     def resizeEvent(self, event):
+        """--- 优化: 在窗口大小改变时，重新缩放已有的预览图 ---"""
         super().resizeEvent(event)
-        # 根据您的要求，注释掉以下代码块
-        # 如果有预览图，则在窗口大小改变时重新缩放
-        # if self.preview_display.pixmap() and not self.preview_display.pixmap().isNull():
-        #     # 创建一个新的、未缩放的pixmap副本进行缩放，以避免累积的质量损失
-        #     original_pixmap = QPixmap(self.preview_image_path)
-        #     self.preview_display.setPixmap(original_pixmap.scaled(
-        #         self.preview_display.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
-        #     ))
+        self.update_preview_display()
 
 
 if __name__ == '__main__':
