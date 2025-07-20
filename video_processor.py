@@ -49,6 +49,7 @@ def _build_filter_complex(
     font_primary, font_size_primary, color_primary,
     font_secondary, font_size_secondary, color_secondary,
     outline_color, outline_width, logger,
+    background_stream_idx, cover_stream_idx,
     preview_time=None
 ):
     """构建完整的FFmpeg filter_complex字符串。"""
@@ -70,13 +71,13 @@ def _build_filter_complex(
                         for i, (start, primary, secondary) in enumerate(lrc_data)]
 
     filters = []
-    # 1. 背景 (来自视频输入 0)
+    # 1. 背景 (来自指定视频输入)
     bg_filter_str = background_anim_func(W=W, H=H, FPS=FPS, duration=duration)
-    filters.append(f"[0:v]{bg_filter_str}[blurred_bg]")
+    filters.append(f"[{background_stream_idx}:v]{bg_filter_str}[blurred_bg]")
 
-    # 2. 封面 (也来自视频输入 0)
+    # 2. 封面 (来自指定视频输入)
     cover_filter_str = cover_anim_func(duration=duration)
-    filters.append(f"[0:v]{cover_filter_str}[fg_cover]")
+    filters.append(f"[{cover_stream_idx}:v]{cover_filter_str}[fg_cover]")
 
     # 3. 叠加背景和封面 (黄金比例布局)
     filters.append("[blurred_bg][fg_cover]overlay=x='(W/2.618-w)/2':y='(H-h)/2'[final_bg]")
@@ -103,6 +104,7 @@ def _build_filter_complex(
         filters.append(f"{base_filter}[v]")
 
     return ";".join(filters)
+
 
 def _run_ffmpeg_process(command, logger, duration=0):
     """通用FFmpeg进程执行函数。"""
@@ -133,12 +135,23 @@ def _run_ffmpeg_process(command, logger, duration=0):
 
 def _prepare_ffmpeg_command(base_params, filter_script_path, is_preview=False):
     """构建FFmpeg命令列表。"""
+    use_separate_bg = base_params.get('background_path') and base_params['background_path'] != base_params['cover_path']
+
     command = [
         base_params['ffmpeg_path'], '-y',
         '-i', str(base_params['cover_path']), # 输入 0
     ]
+    
+    next_input_idx = 1
+    # 如果有独立的背景图，则将其作为输入1
+    if use_separate_bg:
+        command.extend(['-i', str(base_params['background_path'])]) # 输入 1
+        next_input_idx += 1
+    
+    # 音频输入
     if not is_preview:
-        command.extend(['-i', str(base_params['audio_path'])]) # 输入 1
+        command.extend(['-i', str(base_params['audio_path'])]) # 输入 1 或 2
+        audio_map_idx = next_input_idx
 
     command.extend(['-filter_complex_script', filter_script_path])
     
@@ -157,7 +170,7 @@ def _prepare_ffmpeg_command(base_params, filter_script_path, is_preview=False):
             base_params['logger'].status_update(f"启用硬件加速: {hw_accel}，使用编码器 {video_codec_params[1]}")
         
         command.extend([
-            '-map', '[v]', '-map', '1:a',
+            '-map', '[v]', '-map', f'{audio_map_idx}:a',
             *video_codec_params,
             '-c:a', 'aac', '-b:a', '320k',
             '-pix_fmt', 'yuv420p',
@@ -181,9 +194,12 @@ def _process_media(params, is_preview=False):
             lrc_data, _ = parse_bilingual_lrc_with_metadata(f.read())
         if not lrc_data:
             raise ValueError("LRC文件解析失败或内容为空。")
+
+        # 确定视频流索引
+        use_separate_bg = params.get('background_path') and params['background_path'] != params['cover_path']
+        cover_stream_idx = 0
+        background_stream_idx = 1 if use_separate_bg else 0
         
-        # --- FIX STARTS HERE ---
-        # 显式地只提取_build_filter_complex需要的参数
         filter_params = {
             "lrc_data": lrc_data,
             "duration": duration,
@@ -199,9 +215,10 @@ def _process_media(params, is_preview=False):
             "outline_color": params["outline_color"],
             "outline_width": params["outline_width"],
             "logger": logger,
-            "preview_time": params.get("preview_time")
+            "preview_time": params.get("preview_time"),
+            "cover_stream_idx": cover_stream_idx,
+            "background_stream_idx": background_stream_idx
         }
-        # --- FIX ENDS HERE ---
 
         full_filter_complex_string = _build_filter_complex(**filter_params)
         
@@ -210,12 +227,6 @@ def _process_media(params, is_preview=False):
             temp_filter_file = f.name
             logger.status_update(f"已生成临时滤镜脚本: {temp_filter_file}")
             
-        # 预览时只使用一个输入（封面图）
-        preview_params = params.copy()
-        if is_preview:
-            # 移除音频路径，因为预览命令不包含它
-            preview_params.pop('audio_path', None)
-        
         command = _prepare_ffmpeg_command(params, temp_filter_file, is_preview=is_preview)
         _run_ffmpeg_process(command, logger, duration if not is_preview else 0)
 
