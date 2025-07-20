@@ -110,10 +110,10 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("高级歌词视频生成器")
+        self.setWindowTitle("LRC Video Generator")
         self.setGeometry(100, 100, 950, 800)
 
-        self.settings = QSettings("YourCompany", "AdvancedLyricVideo")
+        self.settings = QSettings("YourCompany", "LRCVideoGenerator")
         self.file_paths = {"audio": "", "cover": "", "lrc": ""}
         self.ffmpeg_path = self.settings.value("ffmpeg_path", "ffmpeg")
         

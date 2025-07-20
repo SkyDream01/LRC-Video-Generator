@@ -16,13 +16,6 @@ def get_static_background_filter(W, H, FPS, duration):
         f"zoompan=z=1:d={total_frames}:s={W}x{H}:fps={FPS}"
     )
 
-def get_breathing_shake_background_filter(W, H, FPS, duration):
-    """生成带有呼吸感和轻微摇晃效果的背景滤镜。"""
-    return (
-        f"scale={W*1.2}:-1,crop={W}:{H},boxblur=15:3,"
-        f"zoompan=z='1.05+0.05*sin(2*PI*t/10)':d={int(duration*FPS)}:s={W}x{H}:x='iw/2+(iw/2-iw/zoom)*sin(2*PI*t/15)':y='ih/2+(ih/2-ih/zoom)*cos(2*PI*t/10)',"
-        f"format=yuv420p"
-    )
 
 # --- 歌词动画 ---
 
@@ -159,7 +152,6 @@ def get_vinyl_record_animation_filter(duration):
 
 BACKGROUND_ANIMATIONS = {
     "静态模糊": get_static_background_filter,
-    "呼吸摇晃": get_breathing_shake_background_filter,
 }
 
 TEXT_ANIMATIONS = {
