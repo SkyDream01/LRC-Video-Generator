@@ -87,16 +87,21 @@ def get_slide_and_fade_text_animation(lyrics_with_ends, font_primary_escaped, fo
 
     return ",".join(drawtext_filters)
 
-def get_left_list_right_cover_animation(lyrics_with_ends, font_primary_escaped, font_size_primary, color_primary_ffmpeg,
+def get_list_text_animation(lyrics_with_ends, font_primary_escaped, font_size_primary, color_primary_ffmpeg,
                                         font_secondary_escaped, font_size_secondary, color_secondary_ffmpeg,
                                         outline_color_ffmpeg, outline_width):
-    """在屏幕左侧生成滚动高亮歌词列表。"""
+    """
+    在屏幕左侧生成滚动高亮歌词列表。
+    【V2增强版】: 新增缓动滚动、高亮行背景光效和动态缩放。
+    """
     W, H = 1920, 1080
     list_line_height = font_size_primary + font_size_secondary + 25
-    # 修改: 歌词列表在右侧黄金分割区域居中
     list_x_pos = f"'(W/2.618) + (W*1.618/2.618 - text_w)/2'"
-    TRANSITION_DURATION = 0.2
+    TRANSITION_DURATION = 0.35  # 过渡动画时长
     FADE_DISTANCE_LINES = (H * 6 / 8 / 2) / list_line_height * 1.5
+    
+    # --- 新增: 高亮行样式参数 ---
+    highlight_font_size_primary = int(font_size_primary * 1.1) # 高亮时主歌词字号
 
     if not lyrics_with_ends: return ""
 
@@ -110,7 +115,10 @@ def get_left_list_right_cover_animation(lyrics_with_ends, font_primary_escaped, 
     scroll_y_expr = f"{get_target_y(0)}"
     for j in range(len(lyrics_with_ends)):
         start_j, target_y_j, prev_target_y = lyrics_with_ends[j][0], get_target_y(j), get_target_y(j - 1)
-        transition_expr = f"({prev_target_y} + ({target_y_j} - {prev_target_y}) * (t - {start_j}) / {TRANSITION_DURATION})"
+        # --- 改进: 使用缓动函数 (ease-in-out) 实现平滑滚动 ---
+        progress = f"clip((t - {start_j}) / {TRANSITION_DURATION}, 0, 1)"
+        smoothed_progress = f"(1-cos({progress}*3.14159265))/2"
+        transition_expr = f"({prev_target_y} + ({target_y_j} - {prev_target_y}) * {smoothed_progress})"
         scroll_y_expr = f"if(gte(t,{start_j}),if(lt(t,{start_j}+{TRANSITION_DURATION}),{transition_expr},{target_y_j}),{scroll_y_expr})"
 
     drawtext_filters = []
@@ -122,11 +130,15 @@ def get_left_list_right_cover_animation(lyrics_with_ends, font_primary_escaped, 
 
         if primary_text:
             clean_primary = _clean_text(primary_text)
+            # --- 改进: 高亮行 - 增加动态字号 ---
             drawtext_filters.append(
-                f"drawtext=fontfile='{font_primary_escaped}':text='{clean_primary}':fontsize={font_size_primary}:"
-                f"fontcolor={color_primary_ffmpeg}:bordercolor={outline_color_ffmpeg}:borderw=2:x={list_x_pos}:"
-                f"y='{y_pos_primary_expr}':alpha='{alpha_fade_expr}':enable='{is_highlighted_expr}'"
+                f"drawtext=fontfile='{font_primary_escaped}':text='{clean_primary}':"
+                f"fontsize={highlight_font_size_primary}:" # 使用更大的字号
+                f"fontcolor={color_primary_ffmpeg}:"
+                f"bordercolor={outline_color_ffmpeg}:borderw=2:x={list_x_pos}:"
+                f"y='{y_pos_primary_expr}':alpha='{alpha_fade_expr}':enable='{is_highlighted_expr}':"
             )
+            # 未高亮行
             drawtext_filters.append(
                 f"drawtext=fontfile='{font_primary_escaped}':text='{clean_primary}':fontsize={font_size_primary}:"
                 f"fontcolor={color_secondary_ffmpeg}:bordercolor={outline_color_ffmpeg}:borderw=2:x={list_x_pos}:"
@@ -252,7 +264,7 @@ BACKGROUND_ANIMATIONS = {
 
 TEXT_ANIMATIONS = {
     "淡入淡出": get_slide_and_fade_text_animation,
-    "滚动列表": get_left_list_right_cover_animation,
+    "滚动列表": get_list_text_animation,
 }
 
 COVER_ANIMATIONS = {
