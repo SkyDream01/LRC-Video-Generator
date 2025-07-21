@@ -16,6 +16,21 @@ def get_static_background_filter(W, H, FPS, duration):
         f"zoompan=z=1:d={total_frames}:s={W}x{H}:fps={FPS}"
     )
 
+def get_gradient_wave_background_filter(W, H, FPS, duration):
+    """生成一个动态的、色彩流动的复杂波浪背景。"""
+    # 使用geq滤镜生成复杂的数学图案
+    # r, g, b分量使用不同的sin/cos组合，并随时间(T)变化，创造出流动的色彩
+    # 注意：在geq滤镜中，时间变量是 'T' (大写)
+    r_expr = f"'128 + 64*sin(X/150 + T*2) + 64*cos(Y/150 + T*2.5)'"
+    g_expr = f"'128 + 64*sin(X/180 + T*1.5) + 64*cos(Y/120 + T*2)'"
+    b_expr = f"'128 + 64*sin(X/120 + T*2.5) + 64*cos(Y/180 + T*1.5)'"
+    
+    # 使用nullsrc生成基准视频流，并设置帧率(r)以确保时间变量'T'正确工作
+    return (
+        f"nullsrc=s={W}x{H}:r={FPS}:d={duration},format=yuv420p,"
+        f"geq=r={r_expr}:g={g_expr}:b={b_expr}"
+    )
+
 
 # --- 歌词动画 ---
 
@@ -215,13 +230,17 @@ def get_vinyl_record_animation_filter(duration):
 
 # --- 定义动画预设字典 ---
 
+# 新增：定义一个集合来存储生成式动画的名称
+GENERATIVE_BACKGROUND_ANIMATIONS = {"渐变波浪"}
+
 BACKGROUND_ANIMATIONS = {
     "静态模糊": get_static_background_filter,
+    "渐变波浪": get_gradient_wave_background_filter,
 }
 
 TEXT_ANIMATIONS = {
     "淡入淡出": get_slide_and_fade_text_animation,
-    "滚动列表": get_left_list_right_cover_animation
+    "滚动列表": get_left_list_right_cover_animation,
 }
 
 COVER_ANIMATIONS = {

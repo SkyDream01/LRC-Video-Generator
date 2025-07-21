@@ -7,7 +7,7 @@ import shlex
 import re
 from pathlib import Path
 from lrc_parser import parse_bilingual_lrc_with_metadata
-from animations import BACKGROUND_ANIMATIONS, TEXT_ANIMATIONS, COVER_ANIMATIONS
+from animations import BACKGROUND_ANIMATIONS, TEXT_ANIMATIONS, COVER_ANIMATIONS, GENERATIVE_BACKGROUND_ANIMATIONS
 
 def to_ffmpeg_color(hex_color):
     """将十六进制颜色字符串转换为FFmpeg格式。"""
@@ -71,7 +71,6 @@ def _build_filter_complex(
     lyrics_with_ends = [(start, lrc_data[i + 1][0] if i + 1 < len(lrc_data) else duration, primary, secondary)
                         for i, (start, primary, secondary) in enumerate(lrc_data)]
 
-    # --- 优化: 仅在预览模式下筛选歌词 ---
     visible_lyrics = lyrics_with_ends
     if is_preview and preview_time is not None:
         logger.status_update(f"优化预览: 筛选时间点 {preview_time:.2f}s 附近的歌词...")
@@ -83,38 +82,42 @@ def _build_filter_complex(
         
         if current_lyric_index != -1:
             if text_anim == "淡入淡出":
-                # "淡入淡出"模式一次只显示一句歌词
                 visible_lyrics = [lyrics_with_ends[current_lyric_index]]
                 logger.status_update("预览模式: 淡入淡出，只加载1行歌词。")
             elif text_anim == "滚动列表":
-                # "滚动列表"模式需要上下文，加载一个窗口的歌词
-                window_size = 7  # 上下各7行，总共15行，足够覆盖动画效果
+                window_size = 7
                 start_idx = max(0, current_lyric_index - window_size)
                 end_idx = min(len(lyrics_with_ends), current_lyric_index + window_size + 1)
                 visible_lyrics = lyrics_with_ends[start_idx:end_idx]
                 logger.status_update(f"预览模式: 滚动列表，加载了 {len(visible_lyrics)} 行歌词。")
         else:
-            visible_lyrics = [] # 如果当前时间点没有歌词，则不显示任何歌词
+            visible_lyrics = []
             logger.status_update("预览模式: 当前时间点无歌词。")
 
-
     filters = []
-    # 1. 背景 (来自指定视频输入)
+    base_bg_stream = "[base_bg]"
+
+    # --- 1. 背景处理逻辑重构 ---
     bg_filter_str = background_anim_func(W=W, H=H, FPS=FPS, duration=duration)
-    filters.append(f"[{background_stream_idx}:v]{bg_filter_str}[blurred_bg]")
+    if background_anim in GENERATIVE_BACKGROUND_ANIMATIONS:
+        # 如果是生成式动画，它自己就是流的起点
+        filters.append(f"{bg_filter_str}{base_bg_stream}")
+    else:
+        # 如果是滤镜式动画，需要一个输入流
+        filters.append(f"[{background_stream_idx}:v]{bg_filter_str}{base_bg_stream}")
 
     # 2. 封面 (来自指定视频输入)
     cover_filter_str = cover_anim_func(duration=duration)
     filters.append(f"[{cover_stream_idx}:v]{cover_filter_str}[fg_cover]")
 
     # 3. 叠加背景和封面 (黄金比例布局)
-    filters.append("[blurred_bg][fg_cover]overlay=x='(W/2.618-w)/2':y='(H-h)/2'[final_bg]")
+    filters.append(f"{base_bg_stream}[fg_cover]overlay=x='(W/2.618-w)/2':y='(H-h)/2'[final_bg]")
 
     # 4. 歌词动画
     base_filter = "[final_bg]"
-    if visible_lyrics: # 使用筛选后的歌词列表
+    if visible_lyrics:
         full_drawtext_string = text_anim_func(
-            lyrics_with_ends=visible_lyrics, # 传入筛选后的歌词
+            lyrics_with_ends=visible_lyrics,
             font_primary_escaped=font_primary_escaped, font_size_primary=font_size_primary,
             color_primary_ffmpeg=to_ffmpeg_color(color_primary),
             font_secondary_escaped=font_secondary_escaped, font_size_secondary=font_size_secondary,
@@ -127,13 +130,11 @@ def _build_filter_complex(
 
     # 5. 时间选择（用于预览）
     if is_preview:
-        # 在预览模式下，总是使用 select 过滤器
         filters.append(f"{base_filter},select='eq(n\\,{int(preview_time * FPS)})'[v]")
     else:
         filters.append(f"{base_filter}[v]")
 
     return ";".join(filters)
-
 
 def _run_ffmpeg_process(command, logger, duration=0):
     """通用FFmpeg进程执行函数。"""
@@ -162,53 +163,6 @@ def _run_ffmpeg_process(command, logger, duration=0):
     if process.returncode != 0:
         raise RuntimeError(f"FFmpeg 执行失败，返回码: {process.returncode}。请检查日志。")
 
-def _prepare_ffmpeg_command(base_params, filter_script_path, is_preview=False):
-    """构建FFmpeg命令列表。"""
-    use_separate_bg = base_params.get('background_path') and base_params['background_path'] != base_params['cover_path']
-
-    command = [
-        base_params['ffmpeg_path'], '-y',
-        '-i', str(base_params['cover_path']), # 输入 0
-    ]
-    
-    next_input_idx = 1
-    # 如果有独立的背景图，则将其作为输入1
-    if use_separate_bg:
-        command.extend(['-i', str(base_params['background_path'])]) # 输入 1
-        next_input_idx += 1
-    
-    # 音频输入
-    if not is_preview:
-        command.extend(['-i', str(base_params['audio_path'])]) # 输入 1 或 2
-        audio_map_idx = next_input_idx
-
-    command.extend(['-filter_complex_script', filter_script_path])
-    
-    if is_preview:
-        command.extend([
-            '-map', '[v]',
-            '-vframes', '1',
-            str(base_params['output_image_path'])
-        ])
-    else:
-        video_codec_params = ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20']
-        if (hw_accel := base_params.get('hw_accel')) and hw_accel != "无 (软件编码 x264)":
-            if "NVIDIA" in hw_accel: video_codec_params = ['-c:v', 'h264_nvenc', '-preset', 'fast', '-cq', '23', '-profile:v', 'high']
-            elif "AMD" in hw_accel: video_codec_params = ['-c:v', 'h264_amf', '-quality', 'balanced', '-rc', 'cqp', '-qp_p', '23', '-qp_i', '23']
-            elif "Intel" in hw_accel: video_codec_params = ['-c:v', 'h264_qsv', '-preset', 'fast', '-global_quality', '23']
-            base_params['logger'].status_update(f"启用硬件加速: {hw_accel}，使用编码器 {video_codec_params[1]}")
-        
-        command.extend([
-            '-map', '[v]', '-map', f'{audio_map_idx}:a',
-            *video_codec_params,
-            '-c:a', 'aac', '-b:a', '320k',
-            '-pix_fmt', 'yuv420p',
-            '-r', str(60),
-            '-t', str(base_params['duration']),
-            str(base_params['output_path'])
-        ])
-    return command
-
 def _process_media(params, is_preview=False):
     """统一处理视频生成和预览的通用函数。"""
     temp_filter_file = None
@@ -224,42 +178,75 @@ def _process_media(params, is_preview=False):
         if not lrc_data:
             raise ValueError("LRC文件解析失败或内容为空。")
 
-        # 确定视频流索引
+        # --- 核心修改：动态确定输入文件和流索引 ---
+        is_generative_bg = params["background_anim"] in GENERATIVE_BACKGROUND_ANIMATIONS
         use_separate_bg = params.get('background_path') and params['background_path'] != params['cover_path']
-        cover_stream_idx = 0
-        background_stream_idx = 1 if use_separate_bg else 0
+
+        command_inputs = []
         
+        # 输入0：封面（始终需要）
+        cover_stream_idx = 0
+        command_inputs.extend(['-i', str(params['cover_path'])])
+
+        # 背景流索引：仅在非生成式动画时有效
+        background_stream_idx = -1 
+        if not is_generative_bg:
+            if use_separate_bg:
+                # 如果有独立背景图，则添加为输入1
+                background_stream_idx = 1
+                command_inputs.extend(['-i', str(params['background_path'])])
+            else:
+                # 否则，背景复用封面流
+                background_stream_idx = 0
+        
+        # 音频输入（仅在生成最终视频时需要）
+        audio_map_str = ""
+        if not is_preview:
+            # 正确计算音频文件的输入索引（每个-i参数算一个输入）
+            audio_input_idx = int(len(command_inputs) / 2)
+            command_inputs.extend(['-i', str(params['audio_path'])])
+            audio_map_str = f'-map {audio_input_idx}:a'
+
         filter_params = {
-            "lrc_data": lrc_data,
-            "duration": duration,
-            "background_anim": params["background_anim"],
-            "text_anim": params["text_anim"],
-            "cover_anim": params["cover_anim"],
-            "font_primary": params["font_primary"],
-            "font_size_primary": params["font_size_primary"],
-            "color_primary": params["color_primary"],
-            "font_secondary": params["font_secondary"],
-            "font_size_secondary": params["font_size_secondary"],
-            "color_secondary": params["color_secondary"],
-            "outline_color": params["outline_color"],
-            "outline_width": params["outline_width"],
-            "logger": logger,
-            "preview_time": params.get("preview_time"),
-            "is_preview": is_preview, # 传递 is_preview 标志
+            "lrc_data": lrc_data, "duration": duration,
+            "background_anim": params["background_anim"], "text_anim": params["text_anim"], "cover_anim": params["cover_anim"],
+            "font_primary": params["font_primary"], "font_size_primary": params["font_size_primary"], "color_primary": params["color_primary"],
+            "font_secondary": params["font_secondary"], "font_size_secondary": params["font_size_secondary"], "color_secondary": params["color_secondary"],
+            "outline_color": params["outline_color"], "outline_width": params["outline_width"], "logger": logger,
+            "preview_time": params.get("preview_time"), "is_preview": is_preview,
             "cover_stream_idx": cover_stream_idx,
             "background_stream_idx": background_stream_idx
         }
-
         full_filter_complex_string = _build_filter_complex(**filter_params)
         
         with tempfile.NamedTemporaryFile(mode='w', suffix=".txt", delete=False, encoding='utf-8') as f:
             f.write(full_filter_complex_string)
             temp_filter_file = f.name
             logger.status_update(f"已生成临时滤镜脚本: {temp_filter_file}")
-            
-        command = _prepare_ffmpeg_command(params, temp_filter_file, is_preview=is_preview)
-        _run_ffmpeg_process(command, logger, duration if not is_preview else 0)
 
+        # --- 动态构建最终的FFmpeg命令 ---
+        command_base = [params['ffmpeg_path'], '-y', *command_inputs]
+        command_filters = ['-filter_complex_script', temp_filter_file]
+        
+        if is_preview:
+            command = [*command_base, *command_filters, '-map', '[v]', '-vframes', '1', str(params['output_image_path'])]
+        else:
+            video_codec_params = ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20']
+            if (hw_accel := params.get('hw_accel')) and hw_accel != "无 (软件编码 x264)":
+                if "NVIDIA" in hw_accel: video_codec_params = ['-c:v', 'h264_nvenc', '-preset', 'fast', '-cq', '23', '-profile:v', 'high']
+                elif "AMD" in hw_accel: video_codec_params = ['-c:v', 'h264_amf', '-quality', 'balanced', '-rc', 'cqp', '-qp_p', '23', '-qp_i', '23']
+                elif "Intel" in hw_accel: video_codec_params = ['-c:v', 'h264_qsv', '-preset', 'fast', '-global_quality', '23']
+                params['logger'].status_update(f"启用硬件加速: {hw_accel}，使用编码器 {video_codec_params[1]}")
+            
+            command = [
+                *command_base, *command_filters,
+                '-map', '[v]', *audio_map_str.split(),
+                *video_codec_params,
+                '-c:a', 'aac', '-b:a', '320k', '-pix_fmt', 'yuv420p', '-r', str(60),
+                '-t', str(duration), str(params['output_path'])
+            ]
+        
+        _run_ffmpeg_process(command, logger, duration if not is_preview else 0)
         logger.status_update("处理成功完成。")
 
     finally:
