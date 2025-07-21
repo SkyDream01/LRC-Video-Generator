@@ -17,18 +17,30 @@ def get_static_background_filter(W, H, FPS, duration):
     )
 
 def get_gradient_wave_background_filter(W, H, FPS, duration):
-    """生成一个动态的、色彩流动的复杂波浪背景。"""
-    # 使用geq滤镜生成复杂的数学图案
-    # r, g, b分量使用不同的sin/cos组合，并随时间(T)变化，创造出流动的色彩
-    # 注意：在geq滤镜中，时间变量是 'T' (大写)
-    r_expr = f"'128 + 64*sin(X/150 + T*2) + 64*cos(Y/150 + T*2.5)'"
-    g_expr = f"'128 + 64*sin(X/180 + T*1.5) + 64*cos(Y/120 + T*2)'"
-    b_expr = f"'128 + 64*sin(X/120 + T*2.5) + 64*cos(Y/180 + T*1.5)'"
+    """
+    生成一个动态的、色彩流动的复杂波浪背景 (性能优化版)。
+    通过在低分辨率下生成图案然后将其高质量放大来显著提高性能。
+    """
+    # 核心优化：在低分辨率下生成图案以指数级减少计算量
+    # scale_down_factor = 4 意味着计算量减少到原来的 1/16
+    scale_down_factor = 4
+    low_W, low_H = W // scale_down_factor, H // scale_down_factor
+
+    # 为了在放大后保持视觉模式的比例，需要同步缩放表达式中的空间频率
+    # (即除数)。例如 X/150 -> X/(150/4)
+    r_expr = f"'128 + 64*sin(X/{150 / scale_down_factor} + T*2) + 64*cos(Y/{150 / scale_down_factor} + T*2.5)'"
+    g_expr = f"'128 + 64*sin(X/{180 / scale_down_factor} + T*1.5) + 64*cos(Y/{120 / scale_down_factor} + T*2)'"
+    b_expr = f"'128 + 64*sin(X/{120 / scale_down_factor} + T*2.5) + 64*cos(Y/{180 / scale_down_factor} + T*1.5)'"
     
-    # 使用nullsrc生成基准视频流，并设置帧率(r)以确保时间变量'T'正确工作
+    # 滤镜链:
+    # 1. nullsrc: 创建一个低分辨率的空白视频流。
+    # 2. geq: 在这个低分辨率流上高效地生成图案。
+    # 3. scale: 将生成的低分辨率视频平滑地放大到目标尺寸，
+    #    'spline' 或 'lanczos' 是高质量的插值算法。
     return (
-        f"nullsrc=s={W}x{H}:r={FPS}:d={duration},format=yuv420p,"
-        f"geq=r={r_expr}:g={g_expr}:b={b_expr}"
+        f"nullsrc=s={low_W}x{low_H}:r={FPS}:d={duration},format=yuv420p,"
+        f"geq=r={r_expr}:g={g_expr}:b={b_expr},"
+        f"scale=w={W}:h={H}:flags=spline"
     )
 
 
