@@ -1,5 +1,6 @@
 # LRC Video Generator/color_extractor.py
 import colorsys
+import numpy as np
 from PIL import Image
 from sklearn.cluster import KMeans
 
@@ -13,73 +14,92 @@ def rgb_to_hex(rgb_color):
     return '#{:02x}{:02x}{:02x}'.format(int(rgb_color[0]), int(rgb_color[1]), int(rgb_color[2]))
 
 def get_color_luminance(rgb_color):
-    """计算颜色的相对亮度 (WCAG标准)。"""
+    """计算颜色的相对亮度 (0-1)。"""
     r, g, b = [x / 255.0 for x in rgb_color]
-    r = ((r <= 0.03928) and r / 12.92) or ((r + 0.055) / 1.055) ** 2.4
-    g = ((g <= 0.03928) and g / 12.92) or ((g + 0.055) / 1.055) ** 2.4
-    b = ((b <= 0.03928) and b / 12.92) or ((b + 0.055) / 1.055) ** 2.4
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    return 0.299 * r + 0.587 * g + 0.114 * b
 
+def get_saturation(rgb_color):
+    """计算颜色的饱和度 (0-1)。"""
+    r, g, b = [x / 255.0 for x in rgb_color]
+    h, l, s = colorsys.rgb_to_hls(r, g, b)
+    return s
+    
 def get_contrast_ratio(rgb1, rgb2):
     """计算两种颜色之间的对比度。"""
     lum1 = get_color_luminance(rgb1)
     lum2 = get_color_luminance(rgb2)
     return (max(lum1, lum2) + 0.05) / (min(lum1, lum2) + 0.05)
 
-def extract_and_process_colors(image_path, num_colors=8, min_contrast=3.0):
+def is_good_candidate(color):
+    """判断一个颜色是否是好的主色候选者（不过于亮/暗/灰）。"""
+    luminance = get_color_luminance(color)
+    saturation = get_saturation(color)
+    
+    # 规则：亮度在20%到80%之间，饱和度大于25%
+    return 0.2 < luminance < 0.8 and saturation > 0.25
+
+def extract_and_process_colors(image_path, num_colors=10):
     """
-    从图像中提取主色调，并返回对比度最佳的一组颜色（主、次、描边）。
+    从图像中提取主色调，并返回基于重要性和对比度的一组颜色。
 
     :param image_path: 图像文件路径。
     :param num_colors: 要提取的颜色簇数量。
-    :param min_contrast: 要求的最小对比度。
-    :return: 一个元组(主颜色HEX, 次颜色HEX, 描边颜色HEX)。如果找不到，则返回默认值。
+    :return: 一个元组(主颜色HEX, 次颜色HEX, 描边颜色HEX)。
     """
     try:
         # 1. 加载并预处理图像
         img = Image.open(image_path).convert('RGB')
         img.thumbnail((150, 150))
-        pixels = list(img.getdata())
+        pixels = np.array(img.getdata())
 
         # 2. 使用KMeans进行颜色量化
         kmeans = KMeans(n_clusters=num_colors, random_state=42, n_init=10)
         kmeans.fit(pixels)
-        dominant_colors_rgb = [list(center) for center in kmeans.cluster_centers_]
+        
+        # 获取颜色及其在图像中的占比
+        unique_labels, counts = np.unique(kmeans.labels_, return_counts=True)
+        cluster_centers = kmeans.cluster_centers_
+        
+        # 3. 筛选出好的候选颜色
+        candidates = []
+        for i, center in enumerate(cluster_centers):
+            if is_good_candidate(center):
+                # 存储颜色、占比
+                candidates.append({'color': center, 'percentage': counts[i] / len(pixels)})
 
-        # 3. 寻找主、次颜色的最佳对（对比度最高）
-        primary_rgb, secondary_rgb = None, None
-        max_contrast = 0
-        for i in range(len(dominant_colors_rgb)):
-            for j in range(i + 1, len(dominant_colors_rgb)):
-                color1_rgb = dominant_colors_rgb[i]
-                color2_rgb = dominant_colors_rgb[j]
-                contrast = get_contrast_ratio(color1_rgb, color2_rgb)
-                if contrast > max_contrast:
-                    max_contrast = contrast
-                    primary_rgb, secondary_rgb = color1_rgb, color2_rgb
+        # 4. 选择主颜色
+        if candidates:
+            # 从候选者中选出占比最高的作为主色
+            primary_candidate = max(candidates, key=lambda x: x['percentage'])
+            primary_rgb = primary_candidate['color']
+        else:
+            # 如果没有符合条件的候选者，退回到选择最饱和的颜色作为备用方案
+            primary_rgb = max(cluster_centers, key=lambda c: get_saturation(c))
 
-        if not primary_rgb:
-            return ("#FFFFFF", "#DDDDDD", "#000000") # 备用方案
+        # 5. 选择次要颜色：与主色对比度最高
+        secondary_rgb = None
+        max_contrast_secondary = 0
+        for center in cluster_centers:
+            if np.array_equal(center, primary_rgb): continue
+            contrast = get_contrast_ratio(primary_rgb, center)
+            if contrast > max_contrast_secondary:
+                max_contrast_secondary = contrast
+                secondary_rgb = center
+        if secondary_rgb is None:
+            secondary_rgb = [0,0,0] if get_color_luminance(primary_rgb) > 0.5 else [255,255,255]
 
-        # 确保主颜色更亮
-        if get_color_luminance(primary_rgb) < get_color_luminance(secondary_rgb):
-            primary_rgb, secondary_rgb = secondary_rgb, primary_rgb
-            
-        # 4. 寻找描边颜色：与主颜色对比度最高的颜色
+        # 6. 选择描边颜色：与主色对比度最高（且非次要色）
         outline_rgb = None
-        max_outline_contrast = 0
-        for color in dominant_colors_rgb:
-            # 不选择主、次颜色作为描边色
-            if color == primary_rgb or color == secondary_rgb:
-                continue
-            contrast = get_contrast_ratio(primary_rgb, color)
-            if contrast > max_outline_contrast:
-                max_outline_contrast = contrast
-                outline_rgb = color
+        max_contrast_outline = 0
+        for center in cluster_centers:
+            if np.array_equal(center, primary_rgb) or np.array_equal(center, secondary_rgb): continue
+            contrast = get_contrast_ratio(primary_rgb, center)
+            if contrast > max_contrast_outline:
+                max_contrast_outline = contrast
+                outline_rgb = center
+        if outline_rgb is None:
+             outline_rgb = [0,0,0] if get_color_luminance(primary_rgb) > 0.5 else [255,255,255]
 
-        # 如果找不到合适的描边色（例如颜色太少），则在黑白之间选择
-        if not outline_rgb:
-            outline_rgb = [0,0,0] if get_color_luminance(primary_rgb) > 0.5 else [255,255,255]
 
         return (rgb_to_hex(primary_rgb), rgb_to_hex(secondary_rgb), rgb_to_hex(outline_rgb))
 

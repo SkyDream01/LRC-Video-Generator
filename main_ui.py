@@ -831,7 +831,7 @@ class MainWindow(QMainWindow):
         self._set_combo_text(self.font_combo_primary, self.settings.value("font_primary"))
         self.font_size_spin_primary.setValue(int(self.settings.value("font_size_primary", 56)))
         self._set_combo_text(self.font_combo_secondary, self.settings.value("font_secondary"))
-        self.font_size_spin_secondary.setValue(int(self.settings.value("font_size_secondary", 48)))
+        self.font_size_spin_secondary.setValue(int(self.settings.value("font_size_secondary", 42)))
 
         self._update_color_button_style("color_primary")
         self._update_color_button_style("color_secondary")
