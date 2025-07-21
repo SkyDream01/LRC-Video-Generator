@@ -20,103 +20,6 @@ from video_processor import create_karaoke_video, create_preview_frame
 from animations import BACKGROUND_ANIMATIONS, TEXT_ANIMATIONS, COVER_ANIMATIONS
 from lrc_parser import parse_bilingual_lrc_with_metadata
 
-# --- 全局样式表 ---
-STYLESHEET = """
-QWidget {
-    background-color: #2E2F30;
-    color: #F0F0F0;
-    font-family: 'Segoe UI', 'Microsoft YaHei', 'sans-serif';
-    font-size: 9pt;
-}
-QMainWindow {
-    background-color: #252627;
-}
-QGroupBox {
-    background-color: #353637;
-    border: 1px solid #4A4B4C;
-    border-radius: 5px;
-    margin-top: 1ex; /* 为标题留出空间 */
-    font-weight: bold;
-}
-QGroupBox::title {
-    subcontrol-origin: margin;
-    subcontrol-position: top center;
-    padding: 0 10px;
-    background-color: #4A4B4C;
-    border-radius: 3px;
-}
-QPushButton {
-    background-color: #555;
-    border: 1px solid #666;
-    padding: 5px 10px;
-    border-radius: 4px;
-    min-height: 20px;
-}
-QPushButton:hover {
-    background-color: #6A6A6A;
-    border-color: #888;
-}
-QPushButton:pressed {
-    background-color: #454545;
-}
-QPushButton:disabled {
-    background-color: #404040;
-    color: #888;
-}
-QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {
-    background-color: #252627;
-    border: 1px solid #4A4B4C;
-    border-radius: 3px;
-    padding: 3px 5px;
-}
-QLineEdit:read-only {
-    background-color: #3A3B3C;
-}
-QComboBox::drop-down {
-    border: none;
-}
-QComboBox::down-arrow {
-    image: url(down_arrow.png); /* 可替换为内置资源 */
-}
-QProgressBar {
-    border: 1px solid #4A4B4C;
-    border-radius: 5px;
-    text-align: center;
-    background-color: #252627;
-}
-QProgressBar::chunk {
-    background-color: #0078D7;
-    border-radius: 4px;
-}
-QSlider::groove:horizontal {
-    border: 1px solid #4A4B4C;
-    background: #252627;
-    height: 8px;
-    border-radius: 4px;
-}
-QSlider::handle:horizontal {
-    background: #0078D7;
-    border: 1px solid #005A9E;
-    width: 16px;
-    margin: -4px 0;
-    border-radius: 8px;
-}
-QScrollBar:vertical {
-    border: none;
-    background: #2E2F30;
-    width: 10px;
-    margin: 0;
-}
-QScrollBar::handle:vertical {
-    background: #555;
-    min-height: 20px;
-    border-radius: 5px;
-}
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-    height: 0;
-}
-"""
-
 class QtProglogLogger:
     def __init__(self, qt_emitter):
         self.qt_emitter = qt_emitter
@@ -209,7 +112,6 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("LRC Video Generator")
         self.setGeometry(100, 100, 1100, 800)
-        self.setStyleSheet(STYLESHEET)
 
         self.settings = QSettings("YourCompany", "LRCVideoGenerator")
         self.file_paths = {"audio": "", "cover": "", "lrc": "", "background": ""}
