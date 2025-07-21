@@ -170,75 +170,59 @@ def get_static_cover_animation_filter(duration):
 
 def get_vinyl_record_animation_filter(duration):
     """
-    生成一个圆形、旋转的仿黑胶唱片动画。（V3 - 美化版）
-    此版本不追求真实感，而是通过设计比例（如黄金比例）来美化视觉效果，
-    突出专辑封面，创造艺术化的动态框架。
+    生成一个圆形、旋转的仿黑胶唱片动画。（V4 - 抗锯齿优化）
+    此版本通过在Alpha通道上实现边缘平滑来解决“毛边”问题。
     """
     FPS = 60
     total_frames = max(1, int(duration * FPS))
-    # 使用标准转速以保持动态的真实感
     rotation_speed_per_sec = (2 * 3.1415926535) / 10
 
-    # 定义8x超采样和最终尺寸
     ss = 8
     orig_W, orig_H = 640, 640
     W, H = orig_W * ss, orig_H * ss
     R = W / 2
 
-    # --- V3: 基于美学和设计原则定义各区域 ---
     GOLDEN_RATIO = 1.618034
     
-    # 中心孔 (保持小巧)
     R_hole2 = (R * 0.025)**2
-    # 唱片标签外缘 (使用黄金比例，使其成为视觉主体)
     R_label_outer2 = (R / GOLDEN_RATIO)**2
-    # 标签压纹环 (紧贴新的标签边缘)
     label_radius = R_label_outer2**0.5
     R_press_inner2 = (label_radius * 0.98)**2
     R_press_outer2 = (label_radius * 1.02)**2
-    # 装饰分隔环 (一个平滑的环，分隔标签和音轨)
     R_separator_outer2 = (label_radius * 1.07)**2
-    # 导入轨区域 (保留外圈的动态亮线作为框架)
     R_lead_in_outer = R * 0.99
     R_lead_in_inner = R * 0.93
 
-    # --- 构建 GEQ (Generic EQuasion) 表达式 ---
-    
     DX, DY = f'(X-{W/2})', f'(Y-{H/2})'
     D2 = f'(pow({DX},2)+pow({DY},2))'
     Dist = f'sqrt({D2})'
-
-    alpha_expr = f"'if(lte({D2},{R**2})*gte({D2},{R_hole2}),255,0)'"
     
-    # --- 定义各区域的纹理和效果 ---
+    # --- V4 核心修改：抗锯齿 Alpha 表达式 ---
+    # 通过计算到边缘的距离，并将其用于一个平滑的过渡，来创建柔和的边缘。
+    # `smooth_width` 定义了过渡带的宽度 (以超采样像素为单位)。
+    smooth_width = ss * 1.5 
+    R_hole = R_hole2**0.5
+    alpha_expr = f"'255 * clip(min(({R} - {Dist}) / {smooth_width}, ({Dist} - {R_hole}) / {smooth_width}), 0, 1)'"
 
-    # 1. 程序化高光
     highlight_D2 = f'(pow(X-{W*0.3},2)+pow(Y-{H*0.3},2))'
     highlight_radius = W * 0.7
     highlight_intensity = f'60*pow(max(0,1-sqrt({highlight_D2})/{highlight_radius}),3)'
     
-    # 2. 标签压纹
     label_pressing_ring_darken = f"if(lte({D2},{R_press_outer2})*gte({D2},{R_press_inner2}), 0.85*LUM, LUM)"
 
-    # 3. 黑胶表面不同区域的纹理
-    # 装饰环纹理 (平滑、深邃)
-    separator_texture = "5" # 几乎纯黑，以突出边界
-    # 主要音轨区纹理
+    separator_texture = "5"
     playable_groove_texture = f"15 + 10*sin({Dist}*3.5*{ss})"
-    # 导入轨纹理 (叠加的亮线)
     lead_in_groove_additive = f"if(gte({Dist},{R_lead_in_inner})*lte({Dist},{R_lead_in_outer}), 30 + 30*st(0,sin({Dist}*45*{ss}-PI/2)), 0)"
 
-    # --- 组合所有效果，构建最终颜色表达式 ---
     color_expr = (
-        f"if(lt({D2},{R_label_outer2}),"  # --- 区域1: 标签 (大) ---
+        f"if(lt({D2},{R_label_outer2}),"
             f"  {label_pressing_ring_darken},"
-        f"  if(lt({D2},{R_separator_outer2}),"  # --- 区域2: 装饰环 ---
+        f"  if(lt({D2},{R_separator_outer2}),"
             f"      min(255, {separator_texture} + {highlight_intensity}),"
-        f"      min(255, {playable_groove_texture} + {highlight_intensity} + {lead_in_groove_additive})"  # --- 区域3: 音轨区 + 导入轨
+        f"      min(255, {playable_groove_texture} + {highlight_intensity} + {lead_in_groove_additive})"
         "))"
     )
 
-    # --- 构建最终的FFmpeg滤镜链 ---
     return (
         f"scale=w={W}:h={H},setsar=1,format=yuva444p,"
         f"geq="
@@ -250,7 +234,6 @@ def get_vinyl_record_animation_filter(duration):
         f"zoompan=z=1:d={total_frames}:s={orig_W}x{orig_H}:fps={FPS},"
         f"rotate=a=t*{rotation_speed_per_sec}:c=none:ow={orig_W}:oh={orig_H}"
     )
-
 
 # --- 定义动画预设字典 ---
 
