@@ -95,7 +95,7 @@ def get_list_text_animation(lyrics_with_ends, font_primary_escaped, font_size_pr
     【V2增强版】: 新增缓动滚动、高亮行背景光效和动态缩放。
     """
     W, H = 1920, 1080
-    list_line_height = font_size_primary + font_size_secondary + 25
+    list_line_height = font_size_primary + font_size_secondary + 45 # 行高
     list_x_pos = f"'(W/2.618) + (W*1.618/2.618 - text_w)/2'"
     TRANSITION_DURATION = 0.35  # 过渡动画时长
     FADE_DISTANCE_LINES = (H * 6 / 8 / 2) / list_line_height * 1.5

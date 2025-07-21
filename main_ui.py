@@ -20,6 +20,13 @@ from video_processor import create_karaoke_video, create_preview_frame
 from animations import BACKGROUND_ANIMATIONS, TEXT_ANIMATIONS, COVER_ANIMATIONS
 from lrc_parser import parse_bilingual_lrc_with_metadata
 
+# --- 新增：尝试导入颜色提取模块 ---
+try:
+    from color_extractor import extract_and_process_colors
+    COLOR_EXTRACTION_AVAILABLE = True
+except ImportError:
+    COLOR_EXTRACTION_AVAILABLE = False
+    
 class QtProglogLogger:
     def __init__(self, qt_emitter):
         self.qt_emitter = qt_emitter
@@ -214,6 +221,15 @@ class MainWindow(QMainWindow):
         self.text_anim_combo = self._create_combo_row(anim_layout, 1, "歌词:", TEXT_ANIMATIONS.keys())
         self.cover_anim_combo = self._create_combo_row(anim_layout, 2, "封面:", COVER_ANIMATIONS.keys())
         layout.addLayout(anim_layout)
+        
+        # --- 修改：颜色提取按钮 ---
+        color_extract_button = QPushButton("🎨 从封面提取颜色")
+        if not COLOR_EXTRACTION_AVAILABLE:
+            color_extract_button.setDisabled(True)
+            color_extract_button.setToolTip("请先安装 'Pillow' 和 'scikit-learn' 库以启用此功能。\npip install Pillow scikit-learn")
+        color_extract_button.clicked.connect(self.auto_extract_colors)
+        layout.addWidget(color_extract_button)
+        
         layout.addWidget(self._create_separator())
 
         layout.addWidget(QLabel("<b>主歌词</b>"))
@@ -474,6 +490,45 @@ class MainWindow(QMainWindow):
             self.preview_display.setPixmap(self._current_preview_pixmap.scaled(
                 self.preview_display.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
             ))
+            
+    # --- 修改：颜色提取功能实现 ---
+    def auto_extract_colors(self):
+        if not COLOR_EXTRACTION_AVAILABLE:
+            QMessageBox.critical(self, "依赖缺失", 
+                                 "无法导入颜色提取模块。\n"
+                                 "请先通过 pip 安装 'Pillow' 和 'scikit-learn' 库:\n\n"
+                                 "pip install Pillow scikit-learn")
+            return
+
+        cover_path = self.file_paths.get("cover")
+        if not cover_path or not os.path.exists(cover_path):
+            QMessageBox.warning(self, "操作无效", "请先选择一个有效的封面文件！")
+            return
+            
+        self.log_message(f"正在从封面 '{Path(cover_path).name}' 提取颜色...")
+        self.set_ui_enabled(False)
+        try:
+            # 在单独的线程中运行可能会更好，但对于快速操作，直接调用也可以
+            primary_color, secondary_color, outline_color = extract_and_process_colors(cover_path)
+            
+            if primary_color and secondary_color and outline_color:
+                self.settings.setValue("color_primary", primary_color)
+                self.settings.setValue("color_secondary", secondary_color)
+                self.settings.setValue("outline_color", outline_color)
+                self._update_color_button_style("color_primary")
+                self._update_color_button_style("color_secondary")
+                self._update_color_button_style("outline_color")
+                self.log_message(f"颜色提取成功！主色: {primary_color}, 次色: {secondary_color}, 描边: {outline_color}")
+                QMessageBox.information(self, "成功", f"已自动设置颜色：\n\n主歌词: {primary_color}\n次要歌词: {secondary_color}\n描边: {outline_color}")
+            else:
+                raise ValueError("未能找到合适的颜色对。")
+                
+        except Exception as e:
+            self.log_message(f"颜色提取失败: {e}")
+            QMessageBox.critical(self, "提取失败", f"从封面提取颜色时发生错误:\n{e}")
+        finally:
+            self.set_ui_enabled(True)
+
 
     def save_project(self):
         default_filename = "untitled.kproj"
