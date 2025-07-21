@@ -141,10 +141,19 @@ def _run_ffmpeg_process(command, logger, duration=0):
     logged_command = ' '.join(shlex.quote(str(s)) for s in command)
     logger.status_update(f"--- 开始执行FFmpeg ---\n{logged_command}\n----------------------")
     
+    # --- 修改开始 ---
+    creationflags = 0
+    if sys.platform == 'win32':
+        # 组合 CREATE_NO_WINDOW 和 NORMAL_PRIORITY_CLASS
+        # CREATE_NO_WINDOW 防止弹出黑窗
+        # NORMAL_PRIORITY_CLASS 有助于防止OS在程序进入后台时显著降低其子进程的CPU优先级
+        creationflags = subprocess.CREATE_NO_WINDOW | subprocess.NORMAL_PRIORITY_CLASS
+    # --- 修改结束 ---
+
     process = subprocess.Popen(
         command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         universal_newlines=True, encoding='utf-8', errors='ignore',
-        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+        creationflags=creationflags  # 应用新的 creationflags
     )
 
     if hasattr(logger, 'progress_update') and duration > 0:
