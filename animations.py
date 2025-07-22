@@ -196,7 +196,6 @@ def get_vinyl_record_animation_filter(duration):
 
     GOLDEN_RATIO = 1.618034
     
-    R_hole2 = (R * 0.025)**2
     R_label_outer2 = (R / GOLDEN_RATIO)**2
     label_radius = R_label_outer2**0.5
     R_press_inner2 = (label_radius * 0.98)**2
@@ -210,8 +209,8 @@ def get_vinyl_record_animation_filter(duration):
     Dist = f'sqrt({D2})'
     
     smooth_width = ss * 1.5 
-    R_hole = R_hole2**0.5
-    alpha_expr = f"'255 * clip(min(({R} - {Dist}) / {smooth_width}, ({Dist} - {R_hole}) / {smooth_width}), 0, 1)'"
+    alpha_expr = f"'255 * clip(({R} - {Dist}) / {smooth_width}, 0, 1)'"
+
 
     highlight_D2 = f'(pow(X-{W*0.3},2)+pow(Y-{H*0.3},2))'
     highlight_radius = W * 0.7
