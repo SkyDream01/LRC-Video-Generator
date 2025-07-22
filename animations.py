@@ -21,22 +21,11 @@ def get_gradient_wave_background_filter(W, H, FPS, duration):
     生成一个动态的、色彩流动的复杂波浪背景 (性能优化版)。
     通过在低分辨率下生成图案然后将其高质量放大来显著提高性能。
     """
-    # 核心优化：在低分辨率下生成图案以指数级减少计算量
-    # scale_down_factor = 4 意味着计算量减少到原来的 1/16
     scale_down_factor = 4
     low_W, low_H = W // scale_down_factor, H // scale_down_factor
-
-    # 为了在放大后保持视觉模式的比例，需要同步缩放表达式中的空间频率
-    # (即除数)。例如 X/150 -> X/(150/4)
     r_expr = f"'128 + 64*sin(X/{150 / scale_down_factor} + T*2) + 64*cos(Y/{150 / scale_down_factor} + T*2.5)'"
     g_expr = f"'128 + 64*sin(X/{180 / scale_down_factor} + T*1.5) + 64*cos(Y/{120 / scale_down_factor} + T*2)'"
     b_expr = f"'128 + 64*sin(X/{120 / scale_down_factor} + T*2.5) + 64*cos(Y/{180 / scale_down_factor} + T*1.5)'"
-    
-    # 滤镜链:
-    # 1. nullsrc: 创建一个低分辨率的空白视频流。
-    # 2. geq: 在这个低分辨率流上高效地生成图案。
-    # 3. scale: 将生成的低分辨率视频平滑地放大到目标尺寸，
-    #    'spline' 或 'lanczos' 是高质量的插值算法。
     return (
         f"nullsrc=s={low_W}x{low_H}:r={FPS}:d={duration},format=yuv420p,"
         f"geq=r={r_expr}:g={g_expr}:b={b_expr},"
@@ -65,7 +54,6 @@ def get_slide_and_fade_text_animation(lyrics_with_ends, font_primary_escaped, fo
         alpha_expr = f"'if(lt(t,{start}+{FADE_DURATION}),(t-{start})/{FADE_DURATION},if(gt(t,{end}-{FADE_DURATION}),({end}-t)/{FADE_DURATION},1))'"
         y_slide_offset = f"if(lt(t,{start}+{FADE_DURATION}),({FADE_DURATION}-(t-{start}))/{FADE_DURATION}*{SLIDE_DISTANCE},0)"
         
-        # 修改: 歌词在右侧黄金分割区域居中
         x_pos = f"'(W/2.618) + (W*1.618/2.618 - text_w)/2'"
         
         if primary_text:
@@ -95,13 +83,12 @@ def get_list_text_animation(lyrics_with_ends, font_primary_escaped, font_size_pr
     【V2增强版】: 新增缓动滚动、高亮行背景光效和动态缩放。
     """
     W, H = 1920, 1080
-    list_line_height = font_size_primary + font_size_secondary + 45 # 行高
+    list_line_height = font_size_primary + font_size_secondary + 45
     list_x_pos = f"'(W/2.618) + (W*1.618/2.618 - text_w)/2'"
-    TRANSITION_DURATION = 0.35  # 过渡动画时长
+    TRANSITION_DURATION = 0.35
     FADE_DISTANCE_LINES = (H * 6 / 8 / 2) / list_line_height * 1.5
     
-    # --- 新增: 高亮行样式参数 ---
-    highlight_font_size_primary = int(font_size_primary * 1.1) # 高亮时主歌词字号
+    highlight_font_size_primary = int(font_size_primary * 1.1)
 
     if not lyrics_with_ends: return ""
 
@@ -115,7 +102,6 @@ def get_list_text_animation(lyrics_with_ends, font_primary_escaped, font_size_pr
     scroll_y_expr = f"{get_target_y(0)}"
     for j in range(len(lyrics_with_ends)):
         start_j, target_y_j, prev_target_y = lyrics_with_ends[j][0], get_target_y(j), get_target_y(j - 1)
-        # --- 改进: 使用缓动函数 (ease-in-out) 实现平滑滚动 ---
         progress = f"clip((t - {start_j}) / {TRANSITION_DURATION}, 0, 1)"
         smoothed_progress = f"(1-cos({progress}*3.14159265))/2"
         transition_expr = f"({prev_target_y} + ({target_y_j} - {prev_target_y}) * {smoothed_progress})"
@@ -130,15 +116,13 @@ def get_list_text_animation(lyrics_with_ends, font_primary_escaped, font_size_pr
 
         if primary_text:
             clean_primary = _clean_text(primary_text)
-            # --- 改进: 高亮行 - 增加动态字号 ---
             drawtext_filters.append(
                 f"drawtext=fontfile='{font_primary_escaped}':text='{clean_primary}':"
-                f"fontsize={highlight_font_size_primary}:" # 使用更大的字号
+                f"fontsize={highlight_font_size_primary}:"
                 f"fontcolor={color_primary_ffmpeg}:"
                 f"bordercolor={outline_color_ffmpeg}:borderw=2:x={list_x_pos}:"
                 f"y='{y_pos_primary_expr}':alpha='{alpha_fade_expr}':enable='{is_highlighted_expr}':"
             )
-            # 未高亮行
             drawtext_filters.append(
                 f"drawtext=fontfile='{font_primary_escaped}':text='{clean_primary}':fontsize={font_size_primary}:"
                 f"fontcolor={color_secondary_ffmpeg}:bordercolor={outline_color_ffmpeg}:borderw=2:x={list_x_pos}:"
@@ -158,15 +142,43 @@ def get_list_text_animation(lyrics_with_ends, font_primary_escaped, font_size_pr
 
 def get_static_cover_animation_filter(duration):
     """
-    生成静态封面图的滤镜。
-    修复：使用 zoompan 将静态图转为视频流，以确保在滤镜链中正常工作。
+    生成具有柔和倒影的静态封面图滤镜（已移除暗角）。
     """
-    FPS = 60 # 视频帧率
+    FPS = 60
     total_frames = int(duration * FPS) if duration > 1 else 1
-    return (
-        f"scale=w=600:h=600,setsar=1,"
-        f"zoompan=z=1:d={total_frames}:s=600x600:fps={FPS}"
-    )
+
+    img_w, img_h = 600, 600
+    refl_h = int(img_h * 0.4)
+    canvas_h = img_h + refl_h
+
+    # 滤镜链
+    filters = [
+        # 1. 缩放原始输入, 并分割成两路
+        f"scale={img_w}:{img_h},setsar=1,split=2[main][refl_src]",
+        
+        # 2. 创建一个透明的画布作为基础
+        f"color=c=black@0.0:s={img_w}x{canvas_h}:r={FPS}:d={duration}[canvas]",
+
+        # 3. 创建倒影
+        f"[refl_src]vflip,crop=w={img_w}:h={refl_h}:x=0:y=0,format=yuva444p,"
+        f"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='128*(1-Y/H)',gblur=sigma=2[refl]",
+
+        # 4. 组合主体和倒影
+        f"[canvas][main]overlay=x=0:y=0[tmp]",
+        f"[tmp][refl]overlay=x=0:y={img_h}[with_refl]",
+
+        # 5. [核心修改] 移除暗角效果
+        
+        # 6. 使用 zoompan 确保输出是稳定的视频流
+        f"[with_refl]zoompan=z=1:d={total_frames}:s={img_w}x{canvas_h}:fps={FPS}"
+    ]
+    # 在 zoompan 之前，需要将 with_refl 这个流重命名，以便 zoompan 可以找到它
+    filters.insert(5, "[with_refl]null[final_cover]")
+    # 修改 zoompan 的输入
+    filters[6] = f"[final_cover]zoompan=z=1:d={total_frames}:s={img_w}x{canvas_h}:fps={FPS}"
+    
+    return ",".join(filters)
+
 
 def get_vinyl_record_animation_filter(duration):
     """
@@ -197,9 +209,6 @@ def get_vinyl_record_animation_filter(duration):
     D2 = f'(pow({DX},2)+pow({DY},2))'
     Dist = f'sqrt({D2})'
     
-    # --- V4 核心修改：抗锯齿 Alpha 表达式 ---
-    # 通过计算到边缘的距离，并将其用于一个平滑的过渡，来创建柔和的边缘。
-    # `smooth_width` 定义了过渡带的宽度 (以超采样像素为单位)。
     smooth_width = ss * 1.5 
     R_hole = R_hole2**0.5
     alpha_expr = f"'255 * clip(min(({R} - {Dist}) / {smooth_width}, ({Dist} - {R_hole}) / {smooth_width}), 0, 1)'"
@@ -237,7 +246,6 @@ def get_vinyl_record_animation_filter(duration):
 
 # --- 定义动画预设字典 ---
 
-# 新增：定义一个集合来存储生成式动画的名称
 GENERATIVE_BACKGROUND_ANIMATIONS = {"渐变波浪"}
 
 BACKGROUND_ANIMATIONS = {
@@ -251,6 +259,6 @@ TEXT_ANIMATIONS = {
 }
 
 COVER_ANIMATIONS = {
-    "静态": get_static_cover_animation_filter,
+    "静态展示": get_static_cover_animation_filter,
     "唱片旋转": get_vinyl_record_animation_filter,
 }
