@@ -142,42 +142,37 @@ def get_list_text_animation(lyrics_with_ends, font_primary_escaped, font_size_pr
 
 def get_static_cover_animation_filter(duration):
     """
-    生成具有柔和倒影的静态封面图滤镜（已移除暗角）。
+    生成具有柔和倒影的静态封面图滤镜（保留倒影，优化性能版）。
+    使用 boxblur 替代 gblur 来提升倒影渲染速度。
     """
     FPS = 60
     total_frames = int(duration * FPS) if duration > 1 else 1
-
     img_w, img_h = 600, 600
     refl_h = int(img_h * 0.4)
     canvas_h = img_h + refl_h
 
-    # 滤镜链
-    filters = [
-        # 1. 缩放原始输入, 并分割成两路
+    # 使用分号`;`构建更清晰的滤镜图，最后替换为逗号`,`
+    filter_chains = [
+        # 1. 缩放原始输入, 并分割成两路给主图和倒影使用
         f"scale={img_w}:{img_h},setsar=1,split=2[main][refl_src]",
         
         # 2. 创建一个透明的画布作为基础
         f"color=c=black@0.0:s={img_w}x{canvas_h}:r={FPS}:d={duration}[canvas]",
 
-        # 3. 创建倒影
+        # 3. 创建倒影: 垂直翻转、裁剪、生成Alpha渐变、进行模糊处理
+        #    [性能优化] 使用 boxblur 替代 gblur
         f"[refl_src]vflip,crop=w={img_w}:h={refl_h}:x=0:y=0,format=yuva444p,"
-        f"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='128*(1-Y/H)',gblur=sigma=2[refl]",
+        f"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='128*(1-Y/H)',boxblur=3:1[refl]",
 
-        # 4. 组合主体和倒影
+        # 4. 组合主图和倒影到画布上
         f"[canvas][main]overlay=x=0:y=0[tmp]",
         f"[tmp][refl]overlay=x=0:y={img_h}[with_refl]",
 
-        # 5. [核心修改] 移除暗角效果
-        
-        # 6. 使用 zoompan 确保输出是稳定的视频流
+        # 5. 使用 zoompan 确保输出是稳定的视频流
         f"[with_refl]zoompan=z=1:d={total_frames}:s={img_w}x{canvas_h}:fps={FPS}"
     ]
-    # 在 zoompan 之前，需要将 with_refl 这个流重命名，以便 zoompan 可以找到它
-    filters.insert(5, "[with_refl]null[final_cover]")
-    # 修改 zoompan 的输入
-    filters[6] = f"[final_cover]zoompan=z=1:d={total_frames}:s={img_w}x{canvas_h}:fps={FPS}"
     
-    return ",".join(filters)
+    return ",".join(filter_chains)
 
 
 def get_vinyl_record_animation_filter(duration):
