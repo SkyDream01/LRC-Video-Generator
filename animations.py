@@ -12,7 +12,7 @@ def get_static_background_filter(W, H, FPS, duration):
     """生成静态、模糊的背景滤镜。"""
     total_frames = int(duration * FPS) if duration > 0 else 1
     return (
-        f"scale={W}:-1,crop={W}:{H},boxblur=20:10,"
+        f"scale={W}:-1,crop={W}:{H},boxblur=20:5,"
         f"zoompan=z=1:d={total_frames}:s={W}x{H}:fps={FPS}"
     )
 
@@ -34,34 +34,40 @@ def get_gradient_wave_background_filter(W, H, FPS, duration):
 
 def get_wave_blur_background_filter(W, H, FPS, duration):
     """
-    生成基于输入图片的动态波浪模糊背景滤镜（性能优化版）。
+    生成基于输入图片的动态波浪模糊背景滤镜（支持密度与速度分离，性能优化版）。
     通过在低分辨率下生成波浪效果然后放大来显著提升性能。
     """
     scale_down_factor = 2  # 缩放因子，降低分辨率以减少计算量
     low_W = max(1, W // scale_down_factor)  # 低分辨率宽度，至少为1
     low_H = max(1, H // scale_down_factor)  # 低分辨率高度，至少为1
     total_frames = int(duration * FPS) if duration > 0 else 1
-    wave_strength = 3  # 控制波浪的幅度（原始值）
-    wave_frequency = 40  # 控制波浪的频率（原始值）
-    
-    # 调整参数到低分辨率：频率和幅度按缩放因子调整
+
+    # 波浪参数
+    wave_strength = 3     # 波幅大小（像素单位）
+    wave_density = 50     # 波浪密度（空间周期，像素单位，值越小越密）
+    wave_speed = 2.0      # 波浪速度（时间因子，越大动画越快）
+
+    # 调整参数到低分辨率
     low_wave_strength = wave_strength / scale_down_factor
-    low_wave_frequency = wave_frequency / scale_down_factor
-    geq_expr = f"p(X,Y+{low_wave_strength}*sin(X/{low_wave_frequency}+T))"  # 低分辨率下的位移表达式
-    
-    # 调整模糊参数到低分辨率：模糊半径按缩放因子减少
-    luma_radius = 20  # 原始亮度模糊半径
-    chroma_radius = 10  # 原始色度模糊半径
+    low_wave_density = wave_density / scale_down_factor
+
+    # geq 表达式：密度和速度分离
+    geq_expr = f"p(X,Y+{low_wave_strength}*sin(X/{low_wave_density}+T*{wave_speed}))"
+
+    # 模糊参数
+    luma_radius = 20      # 原始亮度模糊半径
+    chroma_radius = 5     # 原始色度模糊半径
     low_luma_radius = luma_radius / scale_down_factor
     low_chroma_radius = chroma_radius / scale_down_factor
-    
+
     return (
-        f"scale={low_W}:-1,crop={low_W}:{low_H},"  # 缩放到低分辨率并裁剪
-        f"zoompan=z=1:d={total_frames}:s={low_W}x{low_H}:fps={FPS},"  # 在低分辨率下生成帧
-        f"geq='{geq_expr}',"  # 应用波浪效果
-        f"boxblur={low_luma_radius}:{low_chroma_radius},"  # 应用模糊
-        f"scale={W}:{H}:flags=spline"  # 高质量放大到目标分辨率
+        f"scale={low_W}:-1,crop={low_W}:{low_H},"
+        f"zoompan=z=1:d={total_frames}:s={low_W}x{low_H}:fps={FPS},"
+        f"geq='{geq_expr}',"
+        f"boxblur={low_luma_radius}:{low_chroma_radius},"
+        f"scale={W}:{H}:flags=spline"
     )
+
 
 
 # --- 歌词动画 ---
