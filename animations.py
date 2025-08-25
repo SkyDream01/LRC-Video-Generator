@@ -32,6 +32,21 @@ def get_gradient_wave_background_filter(W, H, FPS, duration):
         f"scale=w={W}:h={H}:flags=spline"
     )
 
+def get_wave_blur_background_filter(W, H, FPS, duration):
+    """
+    生成基于输入图片的动态波浪模糊背景滤镜。
+    使用专辑图片作为输入，应用波浪效果和模糊效果。
+    """
+    total_frames = int(duration * FPS) if duration > 0 else 1
+    wave_strength = 8  # 控制波浪的幅度，值越大波浪越强
+    wave_frequency = 20  # 控制波浪的频率，值越小频率越高
+    geq_expr = f"p(X,Y+{wave_strength}*sin(X/{wave_frequency}+T))"  # 使用geq进行垂直位移
+    return (
+        f"scale={W}:-1,crop={W}:{H},"
+        f"zoompan=z=1:d={total_frames}:s={W}x{H}:fps={FPS},"
+        f"geq='{geq_expr}',"
+        f"boxblur=10:5"
+    )
 
 # --- 歌词动画 ---
 
@@ -245,6 +260,7 @@ GENERATIVE_BACKGROUND_ANIMATIONS = {"渐变波浪"}
 BACKGROUND_ANIMATIONS = {
     "静态模糊": get_static_background_filter,
     "渐变波浪": get_gradient_wave_background_filter,
+    "波浪模糊": get_wave_blur_background_filter,  # 新增波浪模糊背景
 }
 
 TEXT_ANIMATIONS = {
