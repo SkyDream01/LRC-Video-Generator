@@ -8,109 +8,24 @@ import tempfile
 from pathlib import Path
 
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QLineEdit, QFileDialog, QProgressBar,
-    QTextEdit, QGroupBox, QComboBox, QSpinBox, QColorDialog,
-    QMessageBox, QDoubleSpinBox, QSlider, QSizePolicy, QGridLayout, QStyle
+    QMainWindow, QWidget, QVBoxLayout, QFileDialog, QColorDialog, QTextEdit, QProgressBar,
+    QMessageBox, QSizePolicy, QGridLayout
 )
-from PySide6.QtCore import QThread, Signal, QSettings, Qt, QSize
+from PySide6.QtCore import Signal, QSettings, Qt
 from PySide6.QtGui import QColor, QPixmap, QIcon
 
-from video_processor import create_karaoke_video, create_preview_frame
-from animations import BACKGROUND_ANIMATIONS, TEXT_ANIMATIONS, COVER_ANIMATIONS
 from lrc_parser import parse_bilingual_lrc_with_metadata
+from workers import AudioInfoWorker, VideoWorker, PreviewWorker
+from ui_components import (
+    create_file_group, create_style_group, create_preview_group,
+    create_advanced_group, create_generation_group
+)
 
-# --- 新增：尝试导入颜色提取模块 ---
 try:
     from color_extractor import extract_and_process_colors
     COLOR_EXTRACTION_AVAILABLE = True
 except ImportError:
     COLOR_EXTRACTION_AVAILABLE = False
-    
-class QtProglogLogger:
-    def __init__(self, qt_emitter):
-        self.qt_emitter = qt_emitter
-        self._last_percent = -1
-    def status_update(self, message):
-        self.qt_emitter.status.emit(message)
-
-    def progress_update(self, percent):
-        if percent > self._last_percent:
-            self.qt_emitter.progress.emit(percent)
-            self._last_percent = percent
-
-
-class AudioInfoWorker(QThread):
-    finished = Signal(float, str)
-    status = Signal(str)
-
-    def __init__(self, ffmpeg_path, audio_path):
-        super().__init__()
-        self.ffmpeg_path_str = ffmpeg_path
-        self.audio_path_str = audio_path
-
-    def run(self):
-        try:
-            ffprobe_exe = 'ffprobe.exe' if sys.platform == 'win32' else 'ffprobe'
-            ffprobe_path = ffprobe_exe
-            if self.ffmpeg_path_str != 'ffmpeg':
-                ffprobe_path = str(Path(self.ffmpeg_path_str).parent / ffprobe_exe)
-
-            cmd = [ffprobe_path, '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', self.audio_path_str]
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0)
-            duration = float(result.stdout.strip())
-            self.finished.emit(duration, "")
-        except Exception as e:
-            error_msg = f"获取音频时长失败: {e}"
-            self.status.emit(error_msg)
-            self.finished.emit(0, error_msg)
-
-class VideoWorker(QThread):
-    progress = Signal(int)
-    status = Signal(str)
-    finished = Signal(str)
-    def __init__(self, params):
-        super().__init__()
-        self.params = params
-
-    def run(self):
-        try:
-            logger = QtProglogLogger(self)
-            self.params['logger'] = logger
-            create_karaoke_video(**self.params)
-            self.finished.emit("成功！视频已生成。")
-        except Exception as e:
-            traceback.print_exc()
-            self.finished.emit(f"发生错误: {e}")
-
-class PreviewWorker(QThread):
-    finished = Signal(QPixmap, str)
-    status = Signal(str)
-
-    def __init__(self, params):
-        super().__init__()
-        self.params = params
-
-    def run(self):
-        try:
-            logger = QtProglogLogger(self)
-            self.params['logger'] = logger
-            output_path = self.params["output_image_path"]
-
-            create_preview_frame(**self.params)
-
-            if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
-                raise FileNotFoundError("FFmpeg未能成功创建预览图片。")
-
-            pixmap = QPixmap(output_path)
-            if pixmap.isNull():
-                 self.finished.emit(QPixmap(), "生成的预览图片无效或无法加载。")
-            else:
-                self.finished.emit(pixmap, "")
-        except Exception as e:
-            traceback.print_exc()
-            self.finished.emit(QPixmap(), f"生成预览时发生错误: {e}")
-
 
 class MainWindow(QMainWindow):
     status = Signal(str)
@@ -123,13 +38,14 @@ class MainWindow(QMainWindow):
         self.settings = QSettings("YourCompany", "LRCVideoGenerator")
         self.file_paths = {"audio": "", "cover": "", "lrc": "", "background": ""}
         self.ffmpeg_path = self.settings.value("ffmpeg_path", "ffmpeg")
+        self.COLOR_EXTRACTION_AVAILABLE = COLOR_EXTRACTION_AVAILABLE
 
         try:
             self.base_dir = Path(__file__).parent.resolve()
         except NameError:
             self.base_dir = Path.cwd().resolve()
         
-        self.setWindowIcon(QIcon(str(self.base_dir / "icon.png"))) # 可选：添加应用图标
+        self.setWindowIcon(QIcon(str(self.base_dir / "icon.png")))
 
         self.font_dir = self.base_dir / 'font'
         self.temp_dir = Path(tempfile.gettempdir()) / 'lrc2video'
@@ -160,173 +76,27 @@ class MainWindow(QMainWindow):
         top_grid_layout.setSpacing(10)
 
         left_v_layout = QVBoxLayout()
-        file_group = self._create_file_group()
-        style_group = self._create_style_group()
+        file_group = create_file_group(self)
+        style_group = create_style_group(self)
         left_v_layout.addWidget(file_group)
         left_v_layout.addWidget(style_group)
         left_v_layout.addStretch()
         top_grid_layout.addLayout(left_v_layout, 0, 0)
 
         right_v_layout = QVBoxLayout()
-        preview_group = self._create_preview_group()
-        advanced_group = self._create_advanced_group()
+        preview_group = create_preview_group(self)
+        advanced_group = create_advanced_group(self)
         right_v_layout.addWidget(preview_group)
         right_v_layout.addWidget(advanced_group)
-        right_v_layout.setStretchFactor(preview_group, 1) # 让预览组拉伸
+        right_v_layout.setStretchFactor(preview_group, 1)
         top_grid_layout.addLayout(right_v_layout, 0, 1)
 
         top_grid_layout.setColumnStretch(0, 1)
         top_grid_layout.setColumnStretch(1, 1)
         main_layout.addLayout(top_grid_layout, 1)
 
-        gen_group = self._create_generation_group()
+        gen_group = create_generation_group(self)
         main_layout.addWidget(gen_group)
-
-    def _create_file_group(self):
-        group = QGroupBox("1. 工程与文件")
-        layout = QVBoxLayout(group)
-        layout.setSpacing(8)
-
-        project_layout = QHBoxLayout()
-        load_button = QPushButton(" 加载工程")
-        load_button.setIcon(self.style().standardIcon(QStyle.SP_DialogOpenButton))
-        load_button.clicked.connect(self.load_project)
-        save_button = QPushButton(" 保存工程")
-        save_button.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
-        save_button.clicked.connect(self.save_project)
-        project_layout.addWidget(load_button)
-        project_layout.addWidget(save_button)
-        layout.addLayout(project_layout)
-        layout.addWidget(self._create_separator())
-
-        self.line_edits = {}
-        file_types = {
-            "audio": "音频",
-            "cover": "封面",
-            "lrc": "歌词",
-            "background": "背景 (可选)"
-        }
-        for key, desc in file_types.items():
-            self.line_edits[key] = self._create_file_selector(layout, key, desc)
-        return group
-
-    def _create_style_group(self):
-        group = QGroupBox("2. 样式与动画")
-        layout = QVBoxLayout(group)
-        layout.setSpacing(8)
-
-        anim_layout = QGridLayout()
-        anim_layout.setSpacing(8)
-        self.bg_anim_combo = self._create_combo_row(anim_layout, 0, "背景:", BACKGROUND_ANIMATIONS.keys())
-        self.text_anim_combo = self._create_combo_row(anim_layout, 1, "歌词:", TEXT_ANIMATIONS.keys())
-        self.cover_anim_combo = self._create_combo_row(anim_layout, 2, "封面:", COVER_ANIMATIONS.keys())
-        layout.addLayout(anim_layout)
-        
-        # --- 修改：颜色提取按钮 ---
-        color_extract_button = QPushButton("🎨 从封面提取颜色")
-        if not COLOR_EXTRACTION_AVAILABLE:
-            color_extract_button.setDisabled(True)
-            color_extract_button.setToolTip("请先安装 'Pillow' 和 'scikit-learn' 库以启用此功能。\npip install Pillow scikit-learn")
-        color_extract_button.clicked.connect(self.auto_extract_colors)
-        layout.addWidget(color_extract_button)
-        
-        layout.addWidget(self._create_separator())
-
-        layout.addWidget(QLabel("<b>主歌词</b>"))
-        layout.addLayout(self._create_font_style_row("primary", 56, "#FFFFFF"))
-        layout.addWidget(QLabel("<b>次要歌词</b>"))
-        layout.addLayout(self._create_font_style_row("secondary", 48, "#DDDDDD"))
-
-        shared_layout = QHBoxLayout()
-        self.outline_width_spin = QSpinBox()
-        self.outline_width_spin.setRange(0, 20)
-        self._create_color_selector(shared_layout, "outline_color", "描边颜色", "#000000")
-        shared_layout.addWidget(QLabel("描边宽度:"))
-        shared_layout.addWidget(self.outline_width_spin)
-        shared_layout.addStretch()
-        layout.addLayout(shared_layout)
-
-        return group
-
-    def _create_preview_group(self):
-        group = QGroupBox("3. 实时预览")
-        layout = QVBoxLayout(group)
-        layout.setSpacing(8)
-
-        controls_layout = QHBoxLayout()
-        controls_layout.addWidget(QLabel("时间点:"))
-        self.preview_slider = QSlider(Qt.Horizontal)
-        self.preview_slider.valueChanged.connect(self.update_preview_time_label)
-        controls_layout.addWidget(self.preview_slider)
-
-        self.preview_time_label = QLabel("0.00s")
-        self.preview_time_label.setFixedWidth(50)
-        controls_layout.addWidget(self.preview_time_label)
-
-        self.preview_button = QPushButton(" 生成预览")
-        self.preview_button.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
-        self.preview_button.clicked.connect(self.generate_preview)
-        controls_layout.addWidget(self.preview_button)
-
-        # Create a container widget to hold the preview label
-        # This prevents the label's sizeHint from affecting the main layout
-        preview_container = QWidget()
-        preview_container_layout = QVBoxLayout(preview_container)
-        preview_container_layout.setContentsMargins(0, 0, 0, 0)
-
-        self.preview_display = QLabel("加载音频文件后可进行预览")
-        self.preview_display.setAlignment(Qt.AlignCenter)
-        self.preview_display.setMinimumHeight(250)
-        self.preview_display.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.preview_display.setStyleSheet("background-color: #252627; color: #888; border: 1px dashed #555; border-radius: 5px;")
-
-        preview_container_layout.addWidget(self.preview_display)
-
-        layout.addLayout(controls_layout)
-        layout.addWidget(preview_container, 1) # Add the container to the main layout with stretch
-        return group
-
-    def _create_advanced_group(self):
-        group = QGroupBox("4. 高级设置")
-        layout = QVBoxLayout(group)
-
-        ffmpeg_layout = QHBoxLayout()
-        ffmpeg_layout.addWidget(QLabel("FFmpeg 路径:"))
-        self.ffmpeg_path_edit = QLineEdit(self.ffmpeg_path)
-        self.ffmpeg_path_edit.setReadOnly(True)
-        ffmpeg_browse_button = QPushButton("..."); ffmpeg_browse_button.setFixedWidth(40)
-        ffmpeg_browse_button.clicked.connect(self.select_ffmpeg_path)
-        ffmpeg_layout.addWidget(self.ffmpeg_path_edit)
-        ffmpeg_layout.addWidget(ffmpeg_browse_button)
-        layout.addLayout(ffmpeg_layout)
-
-        self.hw_accel_combo = self._create_combo_row(layout, 0, "硬件加速:", ["无 (软件编码 x264)", "NVIDIA (h264_nvenc)", "AMD (h264_amf)", "Intel (h264_qsv)"], is_grid=False)
-        return group
-
-    def _create_generation_group(self):
-        group = QGroupBox("5. 生成与日志")
-        layout = QVBoxLayout(group)
-        layout.setSpacing(8)
-
-        controls_layout = QHBoxLayout()
-        self.generate_button = QPushButton("🚀 开始生成视频")
-        self.generate_button.setFixedHeight(40)
-        self.generate_button.clicked.connect(self.start_generation)
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setFixedHeight(40)
-        controls_layout.addWidget(self.generate_button, 2)
-        controls_layout.addWidget(self.progress_bar, 3)
-
-        self.log_box = QTextEdit()
-        self.log_box.setReadOnly(True)
-        self.log_box.setLineWrapMode(QTextEdit.NoWrap)
-        self.log_box.setPlaceholderText("这里会显示操作日志和FFmpeg的输出...")
-        self.log_box.setFixedHeight(150)
-
-        layout.addLayout(controls_layout)
-        layout.addWidget(QLabel("<b>日志输出:</b>"))
-        layout.addWidget(self.log_box)
-        return group
 
     def select_file(self, key):
         filter_map = {
@@ -414,8 +184,6 @@ class MainWindow(QMainWindow):
         if not background_path or not os.path.exists(background_path):
             background_path = self.file_paths["cover"]
 
-
-        # 4. 收集所有参数
         return {
             "audio_path": self.file_paths["audio"],
             "cover_path": self.file_paths["cover"],
@@ -442,7 +210,6 @@ class MainWindow(QMainWindow):
         if not params: return
 
         try:
-            # --- 优化: 复用临时文件名 ---
             if not self._preview_temp_file or not Path(self._preview_temp_file).parent.exists():
                  self._preview_temp_file = self.temp_dir / f"preview_{os.urandom(8).hex()}.png"
 
@@ -472,17 +239,9 @@ class MainWindow(QMainWindow):
             self.preview_display.setText("预览生成失败")
             self._current_preview_pixmap = None
         else:
-            # --- 优化: 保存原始pixmap并更新显示 ---
             self._current_preview_pixmap = pixmap
             self.update_preview_display()
             self.log_message("--- 预览生成成功 ---")
-
-        # --- 优化: 不再立即删除文件，在程序退出时清理 ---
-        # if self._preview_temp_file and os.path.exists(self._preview_temp_file):
-        #     try:
-        #         os.remove(self._preview_temp_file)
-        #     except OSError:
-        #         pass
 
     def update_preview_display(self):
         """根据窗口大小缩放并显示当前预览图"""
@@ -490,8 +249,7 @@ class MainWindow(QMainWindow):
             self.preview_display.setPixmap(self._current_preview_pixmap.scaled(
                 self.preview_display.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
             ))
-            
-    # --- 修改：颜色提取功能实现 ---
+
     def auto_extract_colors(self):
         if not COLOR_EXTRACTION_AVAILABLE:
             QMessageBox.critical(self, "依赖缺失", 
@@ -508,7 +266,6 @@ class MainWindow(QMainWindow):
         self.log_message(f"正在从封面 '{Path(cover_path).name}' 提取颜色...")
         self.set_ui_enabled(False)
         try:
-            # 在单独的线程中运行可能会更好，但对于快速操作，直接调用也可以
             primary_color, secondary_color, outline_color = extract_and_process_colors(cover_path)
             
             if primary_color and secondary_color and outline_color:
@@ -529,7 +286,6 @@ class MainWindow(QMainWindow):
         finally:
             self.set_ui_enabled(True)
 
-
     def save_project(self):
         default_filename = "untitled.kproj"
         if title := self.lrc_metadata.get("ti"):
@@ -544,7 +300,7 @@ class MainWindow(QMainWindow):
             return
 
         project_data = {
-            "version": 1.1, # 版本号更新
+            "version": 1.1,
             "file_paths": self.file_paths,
             "settings": {
                 "font_primary": self.font_combo_primary.currentText(),
@@ -579,7 +335,6 @@ class MainWindow(QMainWindow):
             with open(path, 'r', encoding='utf-8') as f:
                 project_data = json.load(f)
 
-            # 兼容旧版工程文件
             file_paths = project_data.get("file_paths", {})
             if "background" not in file_paths:
                 file_paths["background"] = ""
@@ -613,7 +368,6 @@ class MainWindow(QMainWindow):
                 self.ffmpeg_path = ffmpeg_path_val
                 self.ffmpeg_path_edit.setText(self.ffmpeg_path)
                 
-            # 清除旧的预览图
             self._current_preview_pixmap = None
             self.preview_display.setText("工程已加载，请生成预览")
 
@@ -625,73 +379,6 @@ class MainWindow(QMainWindow):
     def _set_combo_text(self, combo, text):
         if text and combo.findText(text) > -1:
             combo.setCurrentText(text)
-
-    def _create_separator(self):
-        line = QWidget()
-        line.setFixedHeight(1)
-        line.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        line.setStyleSheet("background-color: #4A4B4C;")
-        return line
-
-    def _create_font_style_row(self, key, default_size, default_color):
-        layout = QHBoxLayout()
-        combo = QComboBox()
-        setattr(self, f"font_combo_{key}", combo)
-        spin = QSpinBox()
-        spin.setRange(10, 300)
-        spin.setValue(default_size)
-        setattr(self, f"font_size_spin_{key}", spin)
-
-        layout.addWidget(QLabel("字体:"))
-        layout.addWidget(combo, 1)
-        layout.addWidget(QLabel("字号:"))
-        layout.addWidget(spin)
-        self._create_color_selector(layout, f"color_{key}", "颜色", default_color)
-        return layout
-
-    def _create_combo_row(self, layout, row, label_text, items, is_grid=True):
-        combo = QComboBox()
-        combo.addItems(items)
-        if is_grid:
-            layout.addWidget(QLabel(label_text), row, 0, Qt.AlignRight)
-            layout.addWidget(combo, row, 1)
-        else: # QHBoxLayout
-            h_layout = QHBoxLayout()
-            h_layout.addWidget(QLabel(label_text))
-            h_layout.addWidget(combo, 1)
-            layout.addLayout(h_layout)
-        return combo
-
-    def _create_file_selector(self, layout, key, desc):
-        h_layout = QHBoxLayout()
-        label_text = f"{desc}:"
-        label = QLabel(label_text); label.setFixedWidth(80 if "(可选)" in label_text else 60)
-        line_edit = QLineEdit(); line_edit.setReadOnly(True)
-        browse_button = QPushButton("浏览..."); browse_button.clicked.connect(lambda: self.select_file(key))
-
-        h_layout.addWidget(label)
-        h_layout.addWidget(line_edit)
-
-        if key == 'background':
-            clear_button = QPushButton("清除"); clear_button.setFixedWidth(60)
-            clear_button.clicked.connect(lambda: self.clear_file_selection(key))
-            h_layout.addWidget(clear_button)
-
-        h_layout.addWidget(browse_button)
-        layout.addLayout(h_layout)
-        return line_edit
-
-    def _create_color_selector(self, layout, key, text, default_color):
-        layout.addWidget(QLabel(text))
-        button = QPushButton()
-        button.setFixedSize(80, 25)
-        button.clicked.connect(lambda: self.select_color(key))
-        layout.addWidget(button)
-
-        if not hasattr(self, 'color_buttons'): self.color_buttons = {}
-        self.color_buttons[key] = button
-        if not self.settings.value(key): self.settings.setValue(key, default_color)
-        self._update_color_button_style(key)
 
     def start_generation(self):
         if not self.check_ffmpeg(): return
@@ -720,10 +407,14 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(0)
 
         self.video_worker = VideoWorker(params)
-        self.video_worker.progress.connect(self.progress_bar.setValue)
+        self.video_worker.progress.connect(self.update_progress) # [MODIFIED]
         self.video_worker.status.connect(self.log_message)
         self.video_worker.finished.connect(self.generation_finished)
         self.video_worker.start()
+
+    def update_progress(self, percent, remaining_time_str): # [MODIFIED]
+        self.progress_bar.setValue(percent)
+        self.remaining_time_label.setText(remaining_time_str)
 
     def generation_finished(self, message):
         self.set_ui_enabled(True)
@@ -736,18 +427,13 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "失败", f"生成失败！\n错误: {message}\n\n请检查日志获取详细信息。")
             self.progress_bar.setValue(0)
         self.log_message(f"--- {message} ---")
+        self.remaining_time_label.setText("") # [MODIFIED]
 
     def set_ui_enabled(self, enabled: bool):
-        # 查找所有需要禁用的控件
-        widgets_to_toggle = self.findChildren(QWidget)
-        for widget in widgets_to_toggle:
-            # 不要禁用日志框和进度条本身
-            if isinstance(widget, QTextEdit) or isinstance(widget, QProgressBar):
-                continue
-            widget.setEnabled(enabled)
-        # 确保进度条在运行时是可见的
+        for widget in self.findChildren(QWidget):
+            if not isinstance(widget, (QTextEdit, QProgressBar)):
+                widget.setEnabled(enabled)
         self.progress_bar.setEnabled(True)
-
 
     def populate_fonts(self):
         self.log_message(f"正在从 '{self.font_dir}' 加载字体...")
@@ -755,6 +441,9 @@ class MainWindow(QMainWindow):
             self.font_dir.mkdir(parents=True, exist_ok=True)
             self.log_message("已创建字体文件夹。请将您的 .ttf 或 .otf 字体文件放入其中。")
             return
+        
+        self.font_combo_primary.clear() # [MODIFIED]
+        self.font_combo_secondary.clear() # [MODIFIED]
 
         font_files = [f.name for f in self.font_dir.iterdir() if f.suffix.lower() in ('.ttf', '.otf', '.ttc')]
         if font_files:
@@ -840,7 +529,6 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self.save_settings()
-        # 清理整个临时目录
         try:
             import shutil
             if self.temp_dir.exists():
@@ -851,13 +539,5 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
     def resizeEvent(self, event):
-        """--- 优化: 在窗口大小改变时，重新缩放已有的预览图 ---"""
         super().resizeEvent(event)
         self.update_preview_display()
-
-
-if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec())
