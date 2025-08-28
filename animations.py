@@ -214,66 +214,75 @@ def get_static_cover_animation_filter(duration):
 
 def get_vinyl_record_animation_filter(duration):
     """
-    生成一个圆形、旋转的仿黑胶唱片动画。（V4 - 抗锯齿优化）
-    此版本通过在Alpha通道上实现边缘平滑来解决“毛边”问题。
+    生成一个圆形、旋转的仿黑胶唱片动画 (V5.2)。
     """
     FPS = 60
     total_frames = max(1, int(duration * FPS))
     rotation_speed_per_sec = (2 * 3.1415926535) / 10
 
+    record_size = 640
+    label_size = 400
+
+    # 为抗锯齿进行超采样
     ss = 8
-    orig_W, orig_H = 640, 640
-    W, H = orig_W * ss, orig_H * ss
+    W, H = record_size * ss, record_size * ss
     R = W / 2
 
-    GOLDEN_RATIO = 1.618034
-    
-    R_label_outer2 = (R / GOLDEN_RATIO)**2
-    label_radius = R_label_outer2**0.5
-    R_press_inner2 = (label_radius * 0.98)**2
-    R_press_outer2 = (label_radius * 1.02)**2
-    R_separator_outer2 = (label_radius * 1.07)**2
-    R_lead_in_outer = R * 0.99
-    R_lead_in_inner = R * 0.93
+    # --- 滤镜链定义 ---
+
+    # 1. 准备输入流：
+    #    - 将输入的封面图分流
+    #    - [label_src] 用于生成 400x400 的标签
+    #    - [canvas_src] 用于生成 640x640 的纯黑背景
+    #    - 将两者叠加，形成一个静态的唱片图像 [static_record]
+    prepare_inputs = (
+        f"split[label_src][canvas_src];"
+        f"[label_src]scale={label_size}:{label_size}:flags=lanczos,setsar=1[label];"
+        f"[canvas_src]scale={record_size}:{record_size},format=yuva444p,lutrgb=r=0:g=0:b=0:a=255[black_canvas];"
+        f"[black_canvas][label]overlay=(main_w-overlay_w)/2:(main_h-overlay_h)/2[static_record];"
+    )
+
+    # 2. 对合成好的 [static_record] 应用胶片纹理、遮罩和动画
+    label_radius_ss = (label_size / 2) * ss
+    R_label_outer2 = label_radius_ss**2
 
     DX, DY = f'(X-{W/2})', f'(Y-{H/2})'
     D2 = f'(pow({DX},2)+pow({DY},2))'
     Dist = f'sqrt({D2})'
-    
-    smooth_width = ss * 1.5 
-    alpha_expr = f"'255 * clip(({R} - {Dist}) / {smooth_width}, 0, 1)'"
 
+    smooth_width = ss * 1.5
+    alpha_expr = f"'255 * clip(({R} - {Dist}) / {smooth_width}, 0, 1)'"
 
     highlight_D2 = f'(pow(X-{W*0.3},2)+pow(Y-{H*0.3},2))'
     highlight_radius = W * 0.7
     highlight_intensity = f'60*pow(max(0,1-sqrt({highlight_D2})/{highlight_radius}),3)'
-    
-    label_pressing_ring_darken = f"if(lte({D2},{R_press_outer2})*gte({D2},{R_press_inner2}), 0.85*LUM, LUM)"
 
-    separator_texture = "5"
+    R_lead_in_outer = R * 0.99
+    R_lead_in_inner = R * 0.93
     playable_groove_texture = f"15 + 10*sin({Dist}*3.5*{ss})"
     lead_in_groove_additive = f"if(gte({Dist},{R_lead_in_inner})*lte({Dist},{R_lead_in_outer}), 30 + 30*st(0,sin({Dist}*45*{ss}-PI/2)), 0)"
 
     color_expr = (
         f"if(lt({D2},{R_label_outer2}),"
-            f"  {label_pressing_ring_darken},"
-        f"  if(lt({D2},{R_separator_outer2}),"
-            f"      min(255, {separator_texture} + {highlight_intensity}),"
-        f"      min(255, {playable_groove_texture} + {highlight_intensity} + {lead_in_groove_additive})"
-        "))"
+        f"  LUM,"
+        f"  min(255, {playable_groove_texture} + {highlight_intensity} + {lead_in_groove_additive})"
+        ")"
     )
 
-    return (
-        f"scale=w={W}:h={H},setsar=1,format=yuva444p,"
+    apply_effects = (
+        f"[static_record]scale=w={W}:h={H},setsar=1,format=yuva444p,"
         f"geq="
         f"r='{color_expr.replace('LUM', 'r(X,Y)')}':"
         f"g='{color_expr.replace('LUM', 'g(X,Y)')}':"
         f"b='{color_expr.replace('LUM', 'b(X,Y)')}':"
         f"a={alpha_expr},"
-        f"scale=w={orig_W}:h={orig_H}:flags=lanczos,"
-        f"zoompan=z=1:d={total_frames}:s={orig_W}x{orig_H}:fps={FPS},"
-        f"rotate=a=t*{rotation_speed_per_sec}:c=none:ow={orig_W}:oh={orig_H}"
+        f"scale=w={record_size}:h={record_size}:flags=lanczos,"
+        f"zoompan=z=1:d={total_frames}:s={record_size}x{record_size}:fps={FPS},"
+        f"rotate=a=t*{rotation_speed_per_sec}:c=none:ow={record_size}:oh={record_size}"
     )
+
+    full_chain = prepare_inputs + apply_effects
+    return full_chain.replace(";", ",")
 
 # --- 定义动画预设字典 ---
 
@@ -282,7 +291,7 @@ GENERATIVE_BACKGROUND_ANIMATIONS = {"渐变波浪"}
 BACKGROUND_ANIMATIONS = {
     "静态模糊": get_static_background_filter,
     "渐变波浪": get_gradient_wave_background_filter,
-    "波浪模糊": get_wave_blur_background_filter,  # 新增波浪模糊背景
+    "波浪模糊": get_wave_blur_background_filter,  
 }
 
 TEXT_ANIMATIONS = {

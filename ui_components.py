@@ -63,9 +63,9 @@ def create_style_group(main_window):
     layout.addWidget(font_refresh_button) # [MODIFIED]
 
     layout.addWidget(QLabel("<b>主歌词</b>"))
-    layout.addLayout(_create_font_style_row(main_window, "primary", 56, "#FFFFFF"))
+    layout.addLayout(_create_font_style_row(main_window, "primary", 48, "#FFFFFF"))
     layout.addWidget(QLabel("<b>次要歌词</b>"))
-    layout.addLayout(_create_font_style_row(main_window, "secondary", 48, "#DDDDDD"))
+    layout.addLayout(_create_font_style_row(main_window, "secondary", 42, "#DDDDDD"))
 
     shared_layout = QHBoxLayout()
     main_window.outline_width_spin = QSpinBox()

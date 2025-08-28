@@ -355,8 +355,8 @@ class MainWindow(QMainWindow):
             self._set_combo_text(self.font_combo_primary, s.get("font_primary"))
             self._set_combo_text(self.font_combo_secondary, s.get("font_secondary"))
 
-            self.font_size_spin_primary.setValue(s.get("font_size_primary", 56))
-            self.font_size_spin_secondary.setValue(s.get("font_size_secondary", 48))
+            self.font_size_spin_primary.setValue(s.get("font_size_primary", 48))
+            self.font_size_spin_secondary.setValue(s.get("font_size_secondary", 42))
             self.outline_width_spin.setValue(s.get("outline_width", 3))
 
             for key in ["color_primary", "color_secondary", "outline_color"]:
@@ -518,7 +518,7 @@ class MainWindow(QMainWindow):
 
         self.outline_width_spin.setValue(int(self.settings.value("outline_width", 3)))
         self._set_combo_text(self.font_combo_primary, self.settings.value("font_primary"))
-        self.font_size_spin_primary.setValue(int(self.settings.value("font_size_primary", 56)))
+        self.font_size_spin_primary.setValue(int(self.settings.value("font_size_primary", 48)))
         self._set_combo_text(self.font_combo_secondary, self.settings.value("font_secondary"))
         self.font_size_spin_secondary.setValue(int(self.settings.value("font_size_secondary", 42)))
 
