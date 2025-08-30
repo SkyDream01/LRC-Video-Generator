@@ -2,7 +2,7 @@
 
 
 
-**一款强大而直观的工具，旨在将您的音乐、歌词和专辑封面无缝融合，创造出具有专业水准的卡拉OK或动态歌词视频。**
+**一款强大而直观的工具，旨在将您的音乐、歌词和专辑封面无缝融合，创造出具有专业水-准的卡拉OK或动态歌词视频。**
 
 本工具通过一个清爽的图形用户界面 (GUI)，让复杂的视频合成过程变得简单。您无需学习专业的视频编辑软件，只需提供音频、LRC歌词和封面图片，选择您喜爱的动画效果，即可一键生成高质量的歌词视频。
 
@@ -46,12 +46,13 @@
    Bash
 
    ```
-   pip install PySide6 Pillow scikit-learn
+   pip install PySide6 Pillow scikit-learn numpy
    ```
 
    - `PySide6`: GUI 框架。
    - `Pillow`: 用于图像处理，是“智能色彩提取”功能的核心。
    - `scikit-learn`: 用于颜色聚类，是“智能色彩提取”功能的核心。
+   - `numpy`: scikit-learn的依赖项，用于进行科学计算。
 
 4. **字体文件**:
 
@@ -63,12 +64,12 @@
 
 
 
-1. **启动程序**: 下载项目后，运行 `main_ui.py` 文件启动图形界面。
+1. **启动程序**: 下载项目后，运行 `main.py` 文件启动图形界面。
 
    Bash
 
    ```
-   python main_ui.py
+   python main.py
    ```
 
 2. **加载文件或工程**:
@@ -101,12 +102,15 @@
 
 ```
 LRC-Video-Generator/
-├── main_ui.py             # 主程序入口，负责GUI界面和用户交互
+├── main.py                # 程序主入口
+├── main_ui.py             # GUI界面和用户交互
+├── ui_components.py       # UI组件生成模块
 ├── video_processor.py     # 核心视频处理模块，构建并调用FFmpeg命令
 ├── animations.py          # 定义所有动画效果的FFmpeg滤镜
 ├── lrc_parser.py          # LRC歌词文件解析器
 ├── color_extractor.py     # 从封面图片提取主色调的模块
-├── requestment.txt        # Python 依赖项列表
+├── workers.py             # 后台工作线程模块
+├── requirements.txt       # Python 依赖项列表
 ├── README.md              # 本说明文件
 └── font/                    # (建议) 存放自定义字体文件的目录
 ```
