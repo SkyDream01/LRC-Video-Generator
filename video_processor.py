@@ -43,7 +43,7 @@ class VideoGenParams:
     width: int = 1920
     height: int = 1080
     fps: int = 60
-    # [新增] 布局分割比例 (0.0 - 1.0)，左侧占多少，默认为黄金比例
+    # 布局分割比例 (0.0 - 1.0)，左侧占多少
     layout_split: float = 0.382 
 
 def to_ffmpeg_color(hex_color: str) -> str:
@@ -72,41 +72,74 @@ def _get_media_duration(ffprobe_path: str, media_path: Path, logger) -> float:
     return duration
 
 def _build_filter_complex(params: VideoGenParams, lrc_data: List, is_preview: bool) -> str:
-    params.logger.status_update(f"构建滤镜 ({params.width}x{params.height}, split={params.layout_split:.2f})...")
-    W, H, FPS = params.width, params.height, params.fps
+    # 优化点1：如果是预览，强制降低分辨率 (例如 960x540)，大幅提升处理速度
+    # 你的 animations.py 已经写得很好了，是基于 H 进行比例缩放的，所以这里改 W/H 会自动适配字体大小
+    target_width = params.width
+    target_height = params.height
+    
+    if is_preview:
+        scale_factor = 0.5 # 预览缩放比例，0.5 意味着 1080p -> 540p，速度提升约 4 倍
+        target_width = int(target_width * scale_factor)
+        target_height = int(target_height * scale_factor)
+        # 确保宽高是偶数（FFmpeg yuv420p 要求）
+        if target_width % 2 != 0: target_width -= 1
+        if target_height % 2 != 0: target_height -= 1
+
+    params.logger.status_update(f"构建滤镜 ({target_width}x{target_height}, split={params.layout_split:.2f})...")
+    
+    W, H, FPS = target_width, target_height, params.fps
     split_ratio = params.layout_split
 
     is_generative_bg = params.background_anim in GENERATIVE_BACKGROUND_ANIMATIONS
     use_separate_bg = params.background_path != params.cover_path
+    
+    # 确定输入流索引
+    # 注意：在 _process_media 中，如果是预览模式，且开启了 Input Seeking，
+    # 所有的输入流时间轴都被重置了。
     cover_stream_idx = 0
     background_stream_idx = 1 if not is_generative_bg and use_separate_bg else 0
 
-    lyrics_with_ends = [
-        (start, lrc_data[i + 1][0] if i + 1 < len(lrc_data) else params.duration, primary, secondary)
-        for i, (start, primary, secondary) in enumerate(lrc_data)
-    ]
-    visible_lyrics = _get_visible_lyrics(lyrics_with_ends, params, is_preview)
+    # 优化点2：时间轴偏移
+    # 如果使用了 -ss (Input Seeking)，视频流是从 0 开始的，
+    # 但 lrc_data 的时间戳是绝对时间（例如 120秒）。
+    # 我们需要把歌词时间戳全部减去 preview_time。
+    time_offset = params.preview_time if is_preview else 0.0
+
+    # 处理歌词数据：计算结束时间并应用偏移
+    lyrics_with_ends = []
+    for i, (start, primary, secondary) in enumerate(lrc_data):
+        raw_end = lrc_data[i + 1][0] if i + 1 < len(lrc_data) else params.duration
+        
+        # 应用偏移
+        adj_start = start - time_offset
+        adj_end = raw_end - time_offset
+        
+        lyrics_with_ends.append((adj_start, adj_end, primary, secondary))
+
+    # 筛选当前可见的歌词
+    # 对于预览，现在的当前时间点是 0 (因为我们 seek 到了这里)
+    # 所以我们要找 adj_start <= 0 < adj_end 或者附近的歌词
+    visible_lyrics = _get_visible_lyrics(lyrics_with_ends, params, is_preview, current_t=0.0)
 
     filters = []
     
     # 1. 背景层
     bg_func = BACKGROUND_ANIMATIONS[params.background_anim]
-    try: bg_filter_str = bg_func(W=W, H=H, FPS=FPS, duration=params.duration)
-    except TypeError: bg_filter_str = bg_func(duration=params.duration)
+    # 注意：对于预览，duration 只需要很短，生成 1 帧即可，设置为 1.0 秒防止某些滤镜除以0
+    bg_duration = 1.0 if is_preview else params.duration 
+    
+    try: bg_filter_str = bg_func(W=W, H=H, FPS=FPS, duration=bg_duration)
+    except TypeError: bg_filter_str = bg_func(duration=bg_duration)
 
     if is_generative_bg: filters.append(f"{bg_filter_str}[base_bg]")
     else: filters.append(f"[{background_stream_idx}:v]{bg_filter_str}[base_bg]")
 
     # 2. 封面层
     cover_func = COVER_ANIMATIONS[params.cover_anim]
-    # 传递 layout_split 供内部可能的计算使用（如果有的话），目前主要还是外部控制位置
-    cover_filter_str = cover_func(duration=params.duration, fps=FPS, W=W, H=H)
+    cover_filter_str = cover_func(duration=bg_duration, fps=FPS, W=W, H=H)
     filters.append(f"[{cover_stream_idx}:v]{cover_filter_str}[fg_cover]")
     
-    # 3. 动态布局：将封面叠加在左侧区域的中心
-    # 左侧区域宽度 = W * split_ratio
-    # 封面 X 坐标 = (左侧宽度 - 封面宽度) / 2
-    # 注意：W和h在overlay表达式中也是可用的
+    # 3. 混合背景与封面
     filters.append(f"[base_bg][fg_cover]overlay=x='(W*{split_ratio}-w)/2':y='(H-h)/2'[final_bg]")
 
     # 4. 歌词层
@@ -126,33 +159,60 @@ def _build_filter_complex(params: VideoGenParams, lrc_data: List, is_preview: bo
             outline_color_ffmpeg=to_ffmpeg_color(params.outline_color),
             outline_width=params.outline_width,
             W=W, H=H,
-            layout_split=split_ratio # [新增] 传递分割比例
+            layout_split=split_ratio
         )
 
-    final_chain = f"[final_bg]{text_filter_str},format=yuv420p"
-    
-    if is_preview:
-        filters.append(f"{final_chain},select='eq(n\\,{int(params.preview_time * FPS)})'[v]")
+    # 组装最终链
+    # 如果 text_filter_str 为空 (无歌词)，直接使用 [final_bg]
+    if text_filter_str:
+        final_chain = f"[final_bg]{text_filter_str},format=yuv420p"
     else:
-        filters.append(f"{final_chain}[v]")
+        final_chain = f"[final_bg]format=yuv420p"
+    
+    # 优化点3：预览模式不再使用 select='eq(n, ...)'
+    # 因为我们已经用 -ss 裁剪了输入，现在只需要输出第1帧 [v]
+    filters.append(f"{final_chain}[v]")
         
     return ";".join(filters)
 
-def _get_visible_lyrics(lyrics_with_ends: List, params: VideoGenParams, is_preview: bool) -> List:
+def _get_visible_lyrics(lyrics_with_ends: List, params: VideoGenParams, is_preview: bool, current_t: float = 0.0) -> List:
     if not is_preview: return lyrics_with_ends
-    params.logger.status_update(f"优化预览: 筛选时间点 {params.preview_time:.2f}s...")
+    
+    # params.preview_time 在这里不再使用，因为 lyrics_with_ends 已经根据 offset 调整过了
+    # 我们只需要查找包含 time=0 的歌词，或者 time=0 附近的歌词 (滚动列表)
+    
+    params.logger.status_update(f"优化预览: 筛选可见歌词...")
+    
     current_idx = -1
     for i, (start, end, _, _) in enumerate(lyrics_with_ends):
-        if start <= params.preview_time < end:
+        # 这里的 start 和 end 已经是相对于 preview_time 的相对时间了
+        # 所以我们判断 0 是否在区间内
+        if start <= 0.1 < end: # 用 0.1稍微偏后一点点，防止刚好卡在边界
             current_idx = i
             break
+            
+    # 如果没找到（可能是间奏），找最近的一个？或者返回空
+    if current_idx == -1:
+        # 尝试找最近的一个即将开始的，以便预览能看到点东西
+        # 这是一个可选的优化体验
+        for i, (start, _, _, _) in enumerate(lyrics_with_ends):
+            if start > 0:
+                current_idx = i
+                break
+        if current_idx == -1 and lyrics_with_ends: # 都在后面或者都在前面
+             if lyrics_with_ends[-1][1] < 0: current_idx = len(lyrics_with_ends) - 1 # 歌放完了
+    
     if current_idx == -1: return []
-    if params.text_anim == "淡入淡出": return [lyrics_with_ends[current_idx]]
+
+    if params.text_anim == "淡入淡出": 
+        return [lyrics_with_ends[current_idx]]
+        
     if params.text_anim == "滚动列表":
-        window_size = 6
+        window_size = 5
         start_idx = max(0, current_idx - window_size)
         end_idx = min(len(lyrics_with_ends), current_idx + window_size + 1)
         return lyrics_with_ends[start_idx:end_idx]
+        
     return lyrics_with_ends
 
 def _run_ffmpeg_process(command: List[str], logger, duration: float = 0):
@@ -176,17 +236,22 @@ def _run_ffmpeg_process(command: List[str], logger, duration: float = 0):
         for line in iter(process.stdout.readline, ''):
             line = line.strip()
             if not line: continue
-            if 'time=' not in line and 'frame=' not in line: logger.status_update(line)
-            if progress_match := re.search(r'time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})', line):
-                try:
-                    h, m, s, ds = map(float, progress_match.groups())
-                    current_time = h * 3600 + m * 60 + s + ds / 100
-                    percent = min(99, int(100 * current_time / duration))
-                    logger.progress_update(percent)
-                except ValueError: pass
+            # 过滤掉一些无用的FFmpeg输出以保持日志清洁
+            if 'frame=' in line or 'size=' in line or 'time=' in line:
+                if progress_match := re.search(r'time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})', line):
+                    try:
+                        h, m, s, ds = map(float, progress_match.groups())
+                        current_time = h * 3600 + m * 60 + s + ds / 100
+                        percent = min(99, int(100 * current_time / duration))
+                        logger.progress_update(percent)
+                    except ValueError: pass
+            else:
+                 logger.status_update(line)
     else:
+        # 预览模式不需要进度条，直接读取全部输出
         stdout, _ = process.communicate()
-        if stdout: logger.status_update(stdout)
+        if stdout and "Error" in stdout: # 只有错误才打印，避免预览刷屏
+            logger.status_update(stdout)
 
     process.wait()
     if process.returncode != 0:
@@ -204,13 +269,25 @@ def _process_media(params: VideoGenParams, is_preview: bool = False):
         with open(params.lrc_path, 'r', encoding='utf-8') as f:
             lrc_data, _ = parse_bilingual_lrc_with_metadata(f.read())
         
-        command_inputs = ['-i', str(params.cover_path)]
+        # 优化点4：构建 Input Seeking 参数
+        # 如果是预览，使用 -ss 放在 -i 之前。
+        # 注意：这会瞬间定位到该时间点，不需要解码之前的数据。
+        ss_args = ['-ss', f"{params.preview_time:.3f}"] if is_preview else []
+        
+        # 构建输入列表
+        command_inputs = []
+        
+        # Cover Input
+        command_inputs.extend([*ss_args, '-i', str(params.cover_path)])
+        
         is_generative_bg = params.background_anim in GENERATIVE_BACKGROUND_ANIMATIONS
         if not is_generative_bg and params.background_path != params.cover_path:
-            command_inputs.extend(['-i', str(params.background_path)])
+            # Background Input
+            command_inputs.extend([*ss_args, '-i', str(params.background_path)])
 
         audio_idx = -1
         if not is_preview:
+            # 正常生成模式，不使用 ss_args (因为需要从头生成)，且需要音频
             command_inputs.extend(['-i', str(params.audio_path)])
             audio_idx = len(command_inputs) // 2 - 1 
 
@@ -224,7 +301,15 @@ def _process_media(params: VideoGenParams, is_preview: bool = False):
         command_filters = ['-filter_complex_script', temp_filter_file]
 
         if is_preview:
-            command = [*command_base, *command_filters, '-map', '[v]', '-vframes', '1', str(params.output_image_path)]
+            # 优化点5：预览模式参数调整
+            # -frames:v 1: 只输出1帧
+            command = [
+                *command_base, 
+                *command_filters, 
+                '-map', '[v]', 
+                '-frames:v', '1',  # 关键：只处理一帧
+                str(params.output_image_path)
+            ]
         else:
             video_codec_params = ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20']
             hw_configs = {
