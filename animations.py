@@ -193,14 +193,15 @@ def get_static_cover_animation_filter(duration, fps=60, W=1920, H=1080):
     refl_h = int(img_size * 0.4)
     canvas_h = img_size + refl_h
     
-    return ",".join([
+    # 使用生成器表达式避免创建中间列表
+    return ",".join((
         f"scale={img_size}:{img_size},setsar=1,split=2[m][r_src]",
         f"color=c=black@0.0:s={img_size}x{canvas_h}:r={FPS}:d={duration}[bg]",
         f"[r_src]vflip,crop=w={img_size}:h={refl_h}:x=0:y=0,format=yuva444p,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='128*(1-Y/H)',boxblur=3:1[r]",
         f"[bg][m]overlay=0:0[tmp]",
         f"[tmp][r]overlay=0:{img_size}[out]",
         f"[out]zoompan=z=1:d={frames}:s={img_size}x{canvas_h}:fps={FPS}"
-    ])
+    ))
 
 def get_vinyl_record_animation_filter(duration, fps=60, W=1920, H=1080):
     FPS = fps

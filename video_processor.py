@@ -47,7 +47,13 @@ class VideoGenParams:
     layout_split: float = 0.382 
 
 def to_ffmpeg_color(hex_color: str) -> str:
-    return f"0x{hex_color.lstrip('#')}"
+    """将 HEX 颜色转换为 FFmpeg 格式，带输入验证。"""
+    if not hex_color or not isinstance(hex_color, str):
+        return "0xFFFFFF"
+    hex_clean = hex_color.lstrip('#')
+    if len(hex_clean) != 6 or not all(c in '0123456789ABCDEFabcdef' for c in hex_clean):
+        return "0xFFFFFF"
+    return f"0x{hex_clean}"
 
 def get_ffmpeg_probe_path(ffmpeg_path_str: str) -> str:
     if ffmpeg_path_str == 'ffmpeg':
@@ -279,17 +285,20 @@ def _process_media(params: VideoGenParams, is_preview: bool = False):
         
         # Cover Input
         command_inputs.extend([*ss_args, '-i', str(params.cover_path)])
+        input_count = 1
         
         is_generative_bg = params.background_anim in GENERATIVE_BACKGROUND_ANIMATIONS
         if not is_generative_bg and params.background_path != params.cover_path:
             # Background Input
             command_inputs.extend([*ss_args, '-i', str(params.background_path)])
+            input_count += 1
 
         audio_idx = -1
         if not is_preview:
             # 正常生成模式，不使用 ss_args (因为需要从头生成)，且需要音频
             command_inputs.extend(['-i', str(params.audio_path)])
-            audio_idx = len(command_inputs) // 2 - 1 
+            audio_idx = input_count
+            input_count += 1 
 
         full_filter_complex = _build_filter_complex(params, lrc_data, is_preview)
         
@@ -335,8 +344,11 @@ def _process_media(params: VideoGenParams, is_preview: bool = False):
         
     finally:
         if temp_filter_file and os.path.exists(temp_filter_file):
-            try: os.remove(temp_filter_file)
-            except OSError: pass
+            try:
+                os.remove(temp_filter_file)
+            except OSError as e:
+                if hasattr(params, 'logger') and params.logger:
+                    params.logger.status_update(f"警告: 无法删除临时文件: {e}")
 
 def create_karaoke_video(params: VideoGenParams):
     _process_media(params, is_preview=False)

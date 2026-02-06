@@ -23,7 +23,7 @@ from ui_components import (
     create_file_group, create_style_group, create_preview_group,
     create_advanced_group, create_generation_group
 )
-from video_processor import VideoGenParams
+from video_processor import VideoGenParams, get_ffmpeg_probe_path
 
 try:
     from color_extractor import extract_and_process_colors
@@ -451,14 +451,15 @@ class MainWindow(QMainWindow):
             self.log_message("警告: 在 'font' 文件夹中没有找到任何字体文件。")
 
     def check_ffmpeg(self) -> bool:
-        if not self.ffmpeg_path: self.ffmpeg_path = "ffmpeg"
+        if not self.ffmpeg_path:
+            self.ffmpeg_path = "ffmpeg"
         try:
-            from video_processor import get_ffmpeg_probe_path
             ffprobe_path = get_ffmpeg_probe_path(self.ffmpeg_path)
-            if not ffprobe_path: raise FileNotFoundError
+            if not ffprobe_path:
+                raise FileNotFoundError("ffprobe not found")
             return True
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            self.log_message("警告: FFmpeg 未找到。")
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            self.log_message(f"警告: FFmpeg 未找到。{e}")
             QMessageBox.warning(self, "依赖警告", "未找到有效的 FFmpeg。")
             return False
 
@@ -470,8 +471,11 @@ class MainWindow(QMainWindow):
             self._update_color_button_style(key)
 
     def _update_color_button_style(self, key: str):
-        if not hasattr(self, 'color_buttons') or key not in self.color_buttons: return
+        if not hasattr(self, 'color_buttons') or key not in self.color_buttons:
+            return
         color_name = self.settings.value(key)
+        if not color_name:
+            return
         button = self.color_buttons[key]
         button.setText(color_name)
         q_color = QColor(color_name)

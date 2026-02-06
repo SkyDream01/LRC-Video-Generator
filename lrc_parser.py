@@ -65,15 +65,10 @@ def parse_bilingual_lrc_with_metadata(lrc_content: str) -> tuple:
                     minutes = int(match.group(1))
                     seconds = int(match.group(2))
                     
-                    # 优化2：毫秒处理逻辑
+                    # 优化：毫秒处理逻辑
                     # LRC标准中 .xx 是百分秒(centiseconds)，.xxx 是毫秒
-                    # 逻辑：将数字字符串视为小数部分。
-                    # "1" -> 0.1s = 100ms
-                    # "12" -> 0.12s = 120ms
-                    # "123" -> 0.123s = 123ms
-                    # "05" -> 0.05s = 50ms
+                    # 统一转换为毫秒：将数字字符串视为小数部分，右补零到3位
                     ms_str = match.group(3)
-                    # 使用 ljust(3, '0') 模拟小数位对齐，然后取前3位
                     milliseconds = int(ms_str.ljust(3, '0')[:3])
                     
                     start_time = datetime.timedelta(
@@ -87,6 +82,11 @@ def parse_bilingual_lrc_with_metadata(lrc_content: str) -> tuple:
 
     # 3. 整理与排序
     lyrics = []
+    
+    # 空文件检查
+    if not timed_lyrics:
+        return lyrics, metadata
+    
     # 按时间顺序处理
     for start_time in sorted(timed_lyrics.keys()):
         texts = timed_lyrics[start_time]

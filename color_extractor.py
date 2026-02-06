@@ -49,11 +49,13 @@ def extract_and_process_colors(image_path, num_colors=10):
     try:
         # 1. 加载并预处理图像
         img = Image.open(image_path).convert('RGB')
-        img.thumbnail((150, 150))
+        # 限制最大尺寸以提高性能，同时保持颜色特征
+        img.thumbnail((150, 150), Image.Resampling.LANCZOS)
         pixels = np.array(img.getdata())
 
         # 2. 使用KMeans进行颜色量化
-        kmeans = KMeans(n_clusters=num_colors, random_state=42, n_init=10)
+        # n_init='auto' 在 scikit-learn >= 1.2 中避免警告
+        kmeans = KMeans(n_clusters=num_colors, random_state=42, n_init='auto')
         kmeans.fit(pixels)
         
         # 获取颜色及其在图像中的占比

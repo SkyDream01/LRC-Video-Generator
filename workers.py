@@ -21,6 +21,10 @@ class QtProglogLogger:
         self._last_percent = -1
         self.start_time = start_time
 
+    def reset(self):
+        """重置进度状态，用于新的任务。"""
+        self._last_percent = -1
+
     def status_update(self, message: str):
         """发送状态更新消息。"""
         self.qt_emitter.status.emit(message)
@@ -89,12 +93,13 @@ class VideoWorker(QThread):
     def __init__(self, params: VideoGenParams):
         super().__init__()
         self.params = params
+        self._logger = None
 
     def run(self):
         try:
             start_time = time.time()
-            logger = QtProglogLogger(self, start_time)
-            self.params.logger = logger
+            self._logger = QtProglogLogger(self, start_time)
+            self.params.logger = self._logger
             create_karaoke_video(params=self.params)
             self.finished.emit("成功！视频已生成。")
         except (subprocess.CalledProcessError, ValueError, FileNotFoundError) as e:
@@ -103,6 +108,9 @@ class VideoWorker(QThread):
         except Exception as e:
             traceback.print_exc()
             self.finished.emit(f"发生未知错误: {e}")
+        finally:
+            self._logger = None
+            self.params.logger = None
 
 
 class PreviewWorker(QThread):
@@ -112,11 +120,12 @@ class PreviewWorker(QThread):
     def __init__(self, params: VideoGenParams):
         super().__init__()
         self.params = params
+        self._logger = None
 
     def run(self):
         try:
-            logger = QtProglogLogger(self, time.time())
-            self.params.logger = logger
+            self._logger = QtProglogLogger(self, time.time())
+            self.params.logger = self._logger
             
             create_preview_frame(params=self.params)
             
@@ -135,3 +144,6 @@ class PreviewWorker(QThread):
         except Exception as e:
             traceback.print_exc()
             self.finished.emit(QPixmap(), f"生成预览时发生未知错误: {e}")
+        finally:
+            self._logger = None
+            self.params.logger = None

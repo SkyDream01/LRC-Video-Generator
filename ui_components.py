@@ -68,6 +68,7 @@ def create_style_group(main_window):
     main_window.layout_split_spin.setRange(0.20, 0.80)
     main_window.layout_split_spin.setSingleStep(0.01)
     main_window.layout_split_spin.setValue(0.38)
+    main_window.layout_split_spin.setDecimals(2)
     main_window.layout_split_spin.setSuffix(" (左侧)")
     
     # 联动逻辑
