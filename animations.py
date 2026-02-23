@@ -47,6 +47,24 @@ def get_wave_blur_background_filter(W, H, FPS, duration):
         f"scale={W}:{H}:flags=spline"
     )
 
+def get_color_flow_background_filter(W, H, FPS, duration):
+    """
+    色彩流动效果：颜色在画面中流动变化。
+    """
+    scale_down = 4
+    low_W, low_H = W // scale_down, H // scale_down
+    
+    r = f"'128 + 80*sin(X*0.01 + T*1.2) + 40*cos(Y*0.015 + T*0.8)'"
+    g = f"'128 + 70*sin(X*0.012 + T*1.0 + 2.1) + 50*cos(Y*0.01 + T*1.1)'"
+    b = f"'128 + 60*sin(X*0.008 + T*0.9 + 4.2) + 60*cos(Y*0.012 + T*1.3)'"
+    
+    return (
+        f"nullsrc=s={low_W}x{low_H}:r={FPS}:d={duration},format=yuv420p,"
+        f"geq=r={r}:g={g}:b={b},"
+        f"scale={W}:{H}:flags=spline"
+    )
+
+
 # --- 歌词动画 (全比例化 + 动态布局) ---
 
 @lru_cache(maxsize=128)
@@ -183,6 +201,100 @@ def get_list_text_animation(lyrics_with_ends, font_primary_escaped, font_size_pr
     
     return full_filter_str
 
+def get_bounce_text_animation(lyrics_with_ends, font_primary_escaped, font_size_primary, color_primary_ffmpeg,
+                             font_secondary_escaped, font_size_secondary, color_secondary_ffmpeg,
+                             outline_color_ffmpeg, outline_width, W=1920, H=1080, layout_split=0.382):
+    """
+    弹跳入场动画：歌词以弹跳动画方式入场。
+    使用弹性缓动函数模拟弹跳效果。
+    """
+    FADE_DURATION = 0.6
+    BOUNCE_DURATION = 0.5
+    
+    scale_factor = H / 1080.0
+    real_fs_p = int(font_size_primary * scale_factor)
+    real_fs_s = int(font_size_secondary * scale_factor)
+    real_outline = max(1, int(outline_width * scale_factor))
+    
+    GAP = (real_fs_p * 0.2) + (H * 0.06)
+    x_pos = f"({W}*{layout_split}) + ({W}*(1-{layout_split}) - text_w)/2"
+
+    drawtext_filters = []
+    for start, end, primary_text, secondary_text in lyrics_with_ends:
+        enable = f"'between(t,{start},{end})'"
+        
+        t_rel = f"clip((t-{start})/{BOUNCE_DURATION},0,1)"
+        bounce = f"(1 - cos({t_rel}*3.14159265) * exp(-{t_rel}*3))"
+        
+        alpha = f"'if(lt(t,{start}+{FADE_DURATION}),(t-{start})/{FADE_DURATION},if(gt(t,{end}-{FADE_DURATION}),({end}-t)/{FADE_DURATION},1))'"
+        
+        y_off = f"(1-{bounce})*{H*0.1}"
+        
+        if primary_text:
+            y_prim = f"'H/2 - {real_fs_p} - ({GAP}/2) - ({y_off})'"
+            drawtext_filters.append(
+                f"drawtext=fontfile='{font_primary_escaped}':text='{_clean_text(primary_text)}':"
+                f"fontsize={real_fs_p}:fontcolor={color_primary_ffmpeg}:"
+                f"bordercolor={outline_color_ffmpeg}:borderw={real_outline}:"
+                f"x={x_pos}:y={y_prim}:alpha={alpha}:enable={enable}"
+            )
+        if secondary_text:
+            y_sec = f"'H/2 + ({GAP}/2) - ({y_off})'"
+            drawtext_filters.append(
+                f"drawtext=fontfile='{font_secondary_escaped}':text='{_clean_text(secondary_text)}':"
+                f"fontsize={real_fs_s}:fontcolor={color_secondary_ffmpeg}:"
+                f"bordercolor={outline_color_ffmpeg}:borderw={real_outline}:"
+                f"x={x_pos}:y={y_sec}:alpha={alpha}:enable={enable}"
+            )
+
+    return ",".join(drawtext_filters)
+
+def get_scale_pulse_text_animation(lyrics_with_ends, font_primary_escaped, font_size_primary, color_primary_ffmpeg,
+                                   font_secondary_escaped, font_size_secondary, color_secondary_ffmpeg,
+                                   outline_color_ffmpeg, outline_width, W=1920, H=1080, layout_split=0.382):
+    """
+    缩放脉冲动画：歌词入场时带有缩放效果。
+    由于 FFmpeg drawtext 不支持动态字号，使用 alpha 和位移模拟效果。
+    """
+    FADE_DURATION = 0.5
+    SCALE_DURATION = 0.4
+    
+    scale_factor = H / 1080.0
+    real_fs_p = int(font_size_primary * scale_factor)
+    real_fs_s = int(font_size_secondary * scale_factor)
+    real_outline = max(1, int(outline_width * scale_factor))
+    
+    GAP = (real_fs_p * 0.2) + (H * 0.06)
+    x_pos = f"({W}*{layout_split}) + ({W}*(1-{layout_split}) - text_w)/2"
+
+    drawtext_filters = []
+    for start, end, primary_text, secondary_text in lyrics_with_ends:
+        enable = f"'between(t,{start},{end})'"
+        
+        t_rel = f"clip((t-{start})/{SCALE_DURATION},0,1)"
+        scale_effect = f"(1 - (1-{t_rel})*0.3)"
+        
+        alpha = f"'if(lt(t,{start}+{FADE_DURATION}),(t-{start})/{FADE_DURATION},if(gt(t,{end}-{FADE_DURATION}),({end}-t)/{FADE_DURATION},1))'"
+        
+        if primary_text:
+            y_prim = f"'H/2 - {real_fs_p} - ({GAP}/2)'"
+            drawtext_filters.append(
+                f"drawtext=fontfile='{font_primary_escaped}':text='{_clean_text(primary_text)}':"
+                f"fontsize={real_fs_p}:fontcolor={color_primary_ffmpeg}:"
+                f"bordercolor={outline_color_ffmpeg}:borderw={real_outline}:"
+                f"x={x_pos}:y={y_prim}:alpha={alpha}:enable={enable}"
+            )
+        if secondary_text:
+            y_sec = f"'H/2 + ({GAP}/2)'"
+            drawtext_filters.append(
+                f"drawtext=fontfile='{font_secondary_escaped}':text='{_clean_text(secondary_text)}':"
+                f"fontsize={real_fs_s}:fontcolor={color_secondary_ffmpeg}:"
+                f"bordercolor={outline_color_ffmpeg}:borderw={real_outline}:"
+                f"x={x_pos}:y={y_sec}:alpha={alpha}:enable={enable}"
+            )
+
+    return ",".join(drawtext_filters)
+
 # --- 封面动画 ---
 
 def get_static_cover_animation_filter(duration, fps=60, W=1920, H=1080):
@@ -230,15 +342,19 @@ def get_vinyl_record_animation_filter(duration, fps=60, W=1920, H=1080):
         f"rotate=a=t*{rot_speed}:c=none:ow={final_size}:oh={final_size}"
     ).replace(";", ",")
 
-GENERATIVE_BACKGROUND_ANIMATIONS = {"渐变波浪"}
+
+GENERATIVE_BACKGROUND_ANIMATIONS = {"渐变波浪", "动态光斑", "色彩流动", "粒子漂浮"}
 BACKGROUND_ANIMATIONS = {
     "静态模糊": get_static_background_filter,
     "渐变波浪": get_gradient_wave_background_filter,
-    "波浪模糊": get_wave_blur_background_filter,  
+    "波浪模糊": get_wave_blur_background_filter,
+    "色彩流动": get_color_flow_background_filter,
 }
 TEXT_ANIMATIONS = {
     "淡入淡出": get_slide_and_fade_text_animation,
     "滚动列表": get_list_text_animation,
+    "弹跳入场": get_bounce_text_animation,
+    "缩放脉冲": get_scale_pulse_text_animation,
 }
 COVER_ANIMATIONS = {
     "静态展示": get_static_cover_animation_filter,
