@@ -61,7 +61,9 @@ class MainWindow(QMainWindow):
         except NameError:
             self.base_dir = Path.cwd().resolve()
         
-        self.setWindowIcon(QIcon(str(self.base_dir / "icon.png")))
+        icon_path = self.base_dir / "icon.png"
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
 
         # 设置字体和临时文件目录
         self.font_dir = self.base_dir / 'font'
@@ -69,7 +71,7 @@ class MainWindow(QMainWindow):
         self.temp_dir.mkdir(parents=True, exist_ok=True)
         
         # 初始化用于存储预览图的成员变量
-        self._preview_temp_file = ""
+        self._preview_temp_file: Path | None = None
         self._current_preview_pixmap = None
 
         self.audio_duration = 0
@@ -277,12 +279,17 @@ class MainWindow(QMainWindow):
         """
         if not self.check_ffmpeg(): return
 
+        # 防止并发执行预览任务
+        if hasattr(self, 'preview_worker') and self.preview_worker.isRunning():
+            self.log_message("预览正在生成中，请稍候...")
+            return
+
         params = self._gather_parameters()
         if not params: return
 
         try:
             # 确保临时文件路径有效
-            if not self._preview_temp_file or not Path(self._preview_temp_file).parent.exists():
+            if self._preview_temp_file is None or not self._preview_temp_file.parent.exists():
                  self._preview_temp_file = self.temp_dir / f"preview_{os.urandom(8).hex()}.png"
 
             # 更新参数以进行预览
@@ -509,14 +516,13 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(percent)
         self.remaining_time_label.setText(remaining_time_str)
 
-    def generation_finished(self, message: str):
+    def generation_finished(self, success: bool, message: str):
         """
         视频生成完成后的回调函数。
         """
         self.set_ui_enabled(True)
-        is_success = "成功" in message
 
-        if is_success:
+        if success:
             QMessageBox.information(self, "完成", message)
             self.progress_bar.setValue(100)
         else:
@@ -529,9 +535,13 @@ class MainWindow(QMainWindow):
         """
         启用或禁用界面上的所有控件。
         """
-        for widget in self.findChildren(QWidget):
-            if not isinstance(widget, (QTextEdit, QProgressBar)):
-                widget.setEnabled(enabled)
+        if not hasattr(self, '_interactive_widgets'):
+            self._interactive_widgets = [
+                w for w in self.findChildren(QWidget)
+                if not isinstance(w, (QTextEdit, QProgressBar))
+            ]
+        for widget in self._interactive_widgets:
+            widget.setEnabled(enabled)
         # 确保进度条总是可用的
         self.progress_bar.setEnabled(True)
 
@@ -635,9 +645,6 @@ class MainWindow(QMainWindow):
         self.settings.setValue("text_anim", self.text_anim_combo.currentText())
         self.settings.setValue("cover_anim", self.cover_anim_combo.currentText())
         self.settings.setValue("hw_accel", self.hw_accel_combo.currentText())
-        if hasattr(self, 'color_buttons'):
-            for key in self.color_buttons.keys():
-                self.settings.setValue(key, self.settings.value(key))
         self.log_message("临时设置已保存。")
 
     def load_settings(self):

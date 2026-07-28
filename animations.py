@@ -4,7 +4,11 @@
 定义了用于生成视频背景、歌词和专辑封面动画的FFmpeg滤镜函数。
 每个函数都接受一个 duration 参数，以便于实现与时间相关的动画。
 """
-from functools import lru_cache
+
+# 视频输出参数常量
+VIDEO_WIDTH = 1920
+VIDEO_HEIGHT = 1080
+VIDEO_FPS = 60
 
 # --- 背景动画 ---
 
@@ -88,7 +92,6 @@ def get_wave_blur_background_filter(W, H, FPS, duration):
 
 # --- 歌词动画 ---
 
-@lru_cache(maxsize=128)
 def _clean_text(text: str) -> str:
     """清理歌词中的特殊字符以避免FFmpeg表达式错误。"""
     # FFmpeg 的 drawtext 滤镜对某些字符（如 ' : % ,）有特殊含义，需要转义。
@@ -107,7 +110,7 @@ def get_slide_and_fade_text_animation(lyrics_with_ends, font_primary_escaped, fo
     """
     FADE_DURATION = 0.5  # 淡入淡出时长（秒）
     SLIDE_DISTANCE = 20  # 滑动距离（像素）
-    W, H = 1920, 1080    # 视频分辨率
+    W, H = VIDEO_WIDTH, VIDEO_HEIGHT
 
     drawtext_filters = []
     for start, end, primary_text, secondary_text in lyrics_with_ends:
@@ -153,7 +156,7 @@ def get_list_text_animation(lyrics_with_ends, font_primary_escaped, font_size_pr
         - `alpha_fade_expr`: 根据离高亮行的距离，计算透明度，实现上下淡出效果。
         - 根据是否高亮，为同一行主歌词生成两个 `drawtext`，一个高亮样式，一个普通样式，通过 enable 切换。
     """
-    W, H = 1920, 1080
+    W, H = VIDEO_WIDTH, VIDEO_HEIGHT
     list_line_height = font_size_primary + font_size_secondary + 45
     list_x_pos = f"'(W/2.618) + (W*1.618/2.618 - text_w)/2'"
     TRANSITION_DURATION = 0.35  # 滚动动画时长
@@ -227,7 +230,7 @@ def get_static_cover_animation_filter(duration):
         - boxblur: 使用性能更好的盒子模糊。
     - overlay: 将主图 [main] 和倒影 [refl] 叠加到画布 [canvas] 上。
     """
-    FPS = 60
+    FPS = VIDEO_FPS
     total_frames = int(duration * FPS) if duration > 1 else 1
     img_w, img_h = 600, 600
     refl_h = int(img_h * 0.4)
@@ -249,14 +252,14 @@ def get_vinyl_record_animation_filter(duration):
     """
     生成一个圆形、旋转的仿黑胶唱片动画。
     - geq a='...': 使用 `sqrt(pow(X-W/2,2)+pow(Y-H/2,2))` 计算像素到中心的距离，
-      通过与半径比较，创造出圆形遮罩，并带有平滑的边缘。
+       通过与半径比较，创造出圆形遮罩，并带有平滑的边缘。
     - geq r/g/b='...': 模拟唱片上的纹理和高光。
         - 播放区纹理: `15 + 10*sin(...)` 创建细密的环形纹理。
         - 引入轨纹理: `if(gte(...) ...)` 在特定半径范围内创建更粗的纹理。
         - 高光: `60*pow(...)` 模拟一个光源照射在唱片上形成的高光区域。
     - rotate: 旋转动画，`a=t*...` 表示旋转角度随时间线性变化。
     """
-    FPS = 60
+    FPS = VIDEO_FPS
     total_frames = max(1, int(duration * FPS))
     rotation_speed_per_sec = (2 * 3.1415926535) / 10  # 每10秒转一圈
 

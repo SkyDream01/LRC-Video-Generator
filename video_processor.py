@@ -14,7 +14,7 @@ from typing import List, Tuple
 from lrc_parser import parse_bilingual_lrc_with_metadata
 from animations import (
     BACKGROUND_ANIMATIONS, TEXT_ANIMATIONS, COVER_ANIMATIONS,
-    GENERATIVE_BACKGROUND_ANIMATIONS
+    GENERATIVE_BACKGROUND_ANIMATIONS, VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS
 )
 
 # [新增] 使用 dataclass 封装所有参数，提高代码可读性和类型安全性
@@ -96,7 +96,7 @@ def _build_filter_complex(params: VideoGenParams, lrc_data: List, is_preview: bo
     """
     params.logger.status_update(f"构建滤镜图 (背景: {params.background_anim}, 歌词: {params.text_anim}, 封面: {params.cover_anim})...")
 
-    W, H, FPS = 1920, 1080, 60
+    W, H, FPS = VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_FPS
 
     # 确定输入流索引
     is_generative_bg = params.background_anim in GENERATIVE_BACKGROUND_ANIMATIONS

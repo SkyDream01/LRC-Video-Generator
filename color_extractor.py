@@ -80,7 +80,7 @@ def extract_and_process_colors(image_path, num_colors=10):
         secondary_rgb = None
         max_contrast_secondary = 0
         for center in cluster_centers:
-            if np.array_equal(center, primary_rgb): continue
+            if np.allclose(center, primary_rgb): continue
             contrast = get_contrast_ratio(primary_rgb, center)
             if contrast > max_contrast_secondary:
                 max_contrast_secondary = contrast
@@ -92,7 +92,7 @@ def extract_and_process_colors(image_path, num_colors=10):
         outline_rgb = None
         max_contrast_outline = 0
         for center in cluster_centers:
-            if np.array_equal(center, primary_rgb) or np.array_equal(center, secondary_rgb): continue
+            if np.allclose(center, primary_rgb) or np.allclose(center, secondary_rgb): continue
             contrast = get_contrast_ratio(primary_rgb, center)
             if contrast > max_contrast_outline:
                 max_contrast_outline = contrast

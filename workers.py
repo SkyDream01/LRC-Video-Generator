@@ -89,7 +89,7 @@ class VideoWorker(QThread):
     """
     progress = Signal(int, str)    # 进度信号，发送 (百分比, 剩余时间字符串)
     status = Signal(str)           # 状态信号
-    finished = Signal(str)         # 完成信号，发送成功或失败的消息
+    finished = Signal(bool, str)   # 完成信号，发送 (是否成功, 消息)
 
     def __init__(self, params: VideoGenParams):
         super().__init__()
@@ -104,14 +104,14 @@ class VideoWorker(QThread):
             logger = QtProglogLogger(self, start_time)
             self.params.logger = logger
             create_karaoke_video(params=self.params)
-            self.finished.emit("成功！视频已生成。")
+            self.finished.emit(True, "成功！视频已生成。")
         # [优化] 捕获更具体的异常
         except (subprocess.CalledProcessError, ValueError, FileNotFoundError) as e:
             traceback.print_exc()
-            self.finished.emit(f"发生错误: {e}")
+            self.finished.emit(False, f"发生错误: {e}")
         except Exception as e:
             traceback.print_exc()
-            self.finished.emit(f"发生未知错误: {e}")
+            self.finished.emit(False, f"发生未知错误: {e}")
 
 
 class PreviewWorker(QThread):

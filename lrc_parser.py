@@ -23,8 +23,8 @@ def parse_bilingual_lrc_with_metadata(lrc_content: str) -> tuple:
                - lyrics: 列表，每个元素为 (start_time, primary_text, secondary_text)。
                - metadata: 字典，包含歌曲元数据，如 {'ti': '...', 'ar': '...'}.
     """
-    # 匹配时间戳的正则表达式，例如 [00:12.34] 或 [00:12.345]
-    time_regex = re.compile(r'\[(\d{2}):(\d{2})\.(\d{2,3})\]')
+    # 匹配时间戳的正则表达式，例如 [00:12.34]、[00:12.345] 或 [123:45.67]（支持超过1小时）
+    time_regex = re.compile(r'\[(\d{2,}):(\d{2})\.(\d{2,3})\]')
     # 匹配元数据标签的正则表达式，例如 [ti:歌曲标题]
     meta_regex = re.compile(r'\[(ti|ar|al|by):([^\]]*)\]')
     
