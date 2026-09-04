@@ -1,0 +1,24 @@
+{
+    "version": 1.1,
+    "file_paths": {
+        "audio": "F:/Project/Princession Orchestr/01.イノセントコール/01.イノセントコール - プリンセス・リップル(CV.葵あずさ);プリンセッション・オーケストラ.flac",
+        "cover": "F:/Project/Princession Orchestr/01.イノセントコール/プリンセス・リップル(CV.葵あずさ);プリンセッション・オーケストラ - イノセントコール.jpg",
+        "lrc": "F:/Project/Princession Orchestr/01.イノセントコール/lrc.lrc",
+        "background": ""
+    },
+    "settings": {
+        "font_primary": "TsukuARdGothicStd-Regular.ttf",
+        "font_secondary": "TsukuARdGothicStd-Regular.ttf",
+        "font_size_primary": 56,
+        "font_size_secondary": 42,
+        "color_primary": "#1c4fb3",
+        "color_secondary": "#b0cbdc",
+        "outline_color": "#545977",
+        "outline_width": 3,
+        "ffmpeg_path": "D:/appdata/ffmpeg/bin/ffmpeg.exe",
+        "background_anim": "波浪模糊",
+        "text_anim": "滚动列表",
+        "cover_anim": "唱片旋转",
+        "hw_accel": "无 (软件编码 x264)"
+    }
+}

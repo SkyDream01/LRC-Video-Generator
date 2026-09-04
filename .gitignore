@@ -1,4 +1,30 @@
-*.ttf
+# Python
 __pycache__/
-*.mp4
-*.kproj
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# pytest / pyinstaller
+.pytest_cache/
+build/
+dist/
+*.spec
+
+# 运行产物
+*.kproj.bak
+output/
+
+# 外部二进制不入库（可手动放置）
+ffmpeg/ffmpeg.exe
+ffmpeg/ffprobe.exe
+
+# 用户字体不入库
+font/*
+!font/.gitkeep
+
+# IDE / 系统
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
