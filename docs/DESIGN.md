@@ -1,4 +1,4 @@
-# LRC Video Maker — 设计方案
+# LRC Video Generator（LRC Video Maker）— 设计方案
 
 ## 1. 项目概述
 
@@ -125,7 +125,7 @@ composite 与导出依赖 Qt；CLI 使用 offscreen QGuiApplication。
 ### 4.2 目录结构
 
 ```text
-LVM/
+LRC Video Generator/
 ├── main.py                  # 入口：QApplication + MainWindow
 ├── app/
 │   ├── core/                # —— 渲染核心（无 GUI 依赖）——

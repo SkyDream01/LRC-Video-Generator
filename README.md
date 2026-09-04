@@ -1,8 +1,8 @@
-# LVM — LRC Video Maker
+# LRC Video Generator — LRC Video Maker
 
-LVM 把音频、LRC 歌词和封面合成为动态歌词视频。默认输出为 1920×1080、60 fps 的 MP4，预览和导出使用同一套场景状态与 QPainter 合成逻辑。
+LRC Video Generator 把音频、LRC 歌词和封面合成为动态歌词视频。默认输出为 1920×1080、60 fps 的 MP4，预览和导出使用同一套场景状态与 QPainter 合成逻辑。
 
-LVM 面向两类使用方式：
+LRC Video Generator 面向两类使用方式：
 
 - GUI：选择素材、调整歌词/动画/色彩/输出参数，实时预览后导出。
 - CLI：用 `.kproj` 工程或命令行素材直接出片，也可生成自带素材的演示工程。
@@ -133,7 +133,7 @@ GUI 当前只提供 `landscape_mv` 布局；宽高字段保存在工程格式中
 ## 项目结构
 
 ```text
-LVM/
+LRC Video Generator/
 ├── main.py                  # CLI 与 GUI 入口
 ├── app/core/                # 无 PySide6 依赖的渲染核心
 │   ├── project.py           # KProj 模型、JSON 读写、版本迁移

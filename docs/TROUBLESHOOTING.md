@@ -13,7 +13,7 @@
 处理：
 
 1. 确认项目根目录下是 `ffmpeg/ffmpeg.exe`，不是多套嵌套目录。
-2. 或把 FFmpeg 的可执行文件目录加入 `PATH`，重新打开终端和 LVM。
+2. 或把 FFmpeg 的可执行文件目录加入 `PATH`，重新打开终端和 LRC Video Generator。
 3. 在同一个终端执行 `ffmpeg -version` 和 `ffprobe -version`。
 
 `ffprobe` 缺失时，时长探测会回退到 mutagen；这不能替代导出所需的 `ffmpeg`。
@@ -83,7 +83,7 @@ GUI 的“媒体信息”会显示解析出的标题、艺术家、专辑、LRC 
 
 ## 音频无法播放
 
-LVM 先使用 Qt Multimedia 播放。如果 Qt 后端不能解码某个容器或 FLAC，程序会尝试调用 FFmpeg 解码为 48 kHz、双声道、16-bit PCM，再交给 `QAudioSink`。
+LRC Video Generator 先使用 Qt Multimedia 播放。如果 Qt 后端不能解码某个容器或 FLAC，程序会尝试调用 FFmpeg 解码为 48 kHz、双声道、16-bit PCM，再交给 `QAudioSink`。
 
 如果回退失败：
 

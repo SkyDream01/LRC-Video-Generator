@@ -1,4 +1,4 @@
-# AGENTS.md — LVM (LRC Video Maker)
+# AGENTS.md — LRC Video Generator (LRC Video Maker)
 
 面向 AI 编码代理与贡献者的工程约定。设计方案唯一来源：[DESIGN.md](DESIGN.md)，README 面向使用者。
 
