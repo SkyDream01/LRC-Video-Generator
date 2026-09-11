@@ -109,7 +109,10 @@ def build_lyrics_assets(ctx: RenderContext) -> LyricsAssets:
         )
 
     has_sub = any(bm.sub for bm in lines)
-    step = style.main_size * 1.5 + (style.sub_size * 1.2 if has_sub else 0.0)
+    step = max(
+        style.main_size * 1.5 + (style.sub_size * 1.2 if has_sub else 0.0),
+        max((bm.height for bm in lines), default=0.0) + SUB_GAP,
+    )
     return LyricsAssets(
         lines=lines, rect=rect, starts=line_starts(ctx.intervals), step=step
     )
@@ -133,14 +136,14 @@ class FadeLyrics(BaseLayer):
     def eval(self, t: float, ctx: RenderContext) -> LyricsState:
         assets = cast(LyricsAssets, ctx.assets[KIND_LYRICS])
         idx = current_index(assets.starts, t)
-        if idx < 0 or idx >= len(assets.lines):
+        if idx < 0 or idx >= len(assets.lines) or t >= ctx.intervals[idx][1]:
             return LyricsState((), -1)
         start, end = ctx.intervals[idx]
-        fade_s = self.params["fade_ms"] / 1000.0
+        fade_s = min(self.params["fade_ms"] / 1000.0, (end - start) / 2.0)
         if fade_s <= 0.0:
             alpha = 1.0
         else:
-            alpha = clamp(min((t - start) / fade_s, (end - t) / fade_s))
+            alpha = _smooth(clamp(min((t - start) / fade_s, (end - t) / fade_s)))
         rect = assets.rect
         cx = rect[0] + rect[2] / 2.0
         cy = rect[1] + rect[3] / 2.0
@@ -171,13 +174,15 @@ class ScrollListLyrics(BaseLayer):
     def eval(self, t: float, ctx: RenderContext) -> LyricsState:
         assets = cast(LyricsAssets, ctx.assets[KIND_LYRICS])
         idx = current_index(assets.starts, t)
-        if idx < 0 or idx >= len(assets.lines):
+        if idx < 0 or idx >= len(assets.lines) or t >= ctx.intervals[idx][1]:
             return LyricsState((), -1)
 
         ease_fn = _EASINGS.get(str(self.params["ease"]), _ease_cubic)
-        # 换行动画：当前行 start 起缓动，从上一行位置滑到当前位置（首行从 -1 滑入）
-        progress = clamp((t - ctx.intervals[idx][0]) / (SCROLL_MS / 1000.0))
-        focus = (idx - 1) + ease_fn(progress)
+        # 换行动画：当前行 start 起缓动，从上一行位置滑到当前位置（首行保持居中）
+        start, end = ctx.intervals[idx]
+        seconds = min(SCROLL_MS / 1000.0, (end - start) / 2.0)
+        progress = clamp((t - start) / seconds) if seconds > 0 else 1.0
+        focus = max(0.0, (idx - 1) + ease_fn(progress))
 
         rect = assets.rect
         cx = rect[0] + rect[2] / 2.0
@@ -192,14 +197,19 @@ class ScrollListLyrics(BaseLayer):
             dist = abs(i - focus)
             if dist > half + 0.5:
                 continue
-            alpha = 1.0 if dist < 0.5 else clamp(1.0 - 0.28 * dist, 0.15, 1.0)
+            alpha = (1.0 - 0.65 * _smooth(min(dist, 1.0))) * _smooth(clamp((half - dist) * 2.0))
             y = cy + (i - focus) * assets.step - assets.lines[i].height / 2.0
             items.append(LyricItem(i, cx, y, alpha, i == idx))
         return LyricsState(tuple(items), idx)
 
 
+def _smooth(p: float) -> float:
+    """端点速度为零的平滑插值。"""
+    return p * p * (3.0 - 2.0 * p)
+
+
 def _ease_cubic(p: float) -> float:
-    return 1.0 - (1.0 - p) ** 3
+    return _smooth(p)
 
 
 _EASINGS = {"linear": lambda p: p, "cubic": _ease_cubic}
@@ -231,7 +241,7 @@ class SlideLyrics(FadeLyrics):
         leave = clamp((end - t) / seconds) if seconds > 0 else 1.0
         offset = self.params["distance"] * ((1 - enter) ** 3 - (1 - leave) ** 3)
         item = replace(
-            state.items[0], y=state.items[0].y + offset, opacity=min(enter, leave)
+            state.items[0], y=state.items[0].y + offset, opacity=_smooth(min(enter, leave))
         )
         return LyricsState((item,), state.current_index)
 
@@ -260,9 +270,9 @@ class RevealLyrics(FadeLyrics):
             idx,
             x + w / 2,
             y + (h - assets.lines[idx].height) / 2,
-            1.0,
+            _smooth(clamp((end - t) / min(0.2, (end - start) / 2))) if seconds > 0 else 1.0,
             True,
-            reveal=progress,
+            reveal=_smooth(progress),
         )
         return LyricsState((item,), idx)
 
@@ -293,7 +303,7 @@ class Flip3DLyrics(FadeLyrics):
         leave = clamp((end - t) / seconds) if seconds > 0 else 1.0
         tilt = self.params["angle"] * ((1 - enter) ** 3 - (1 - leave) ** 3)
         return LyricsState(
-            (replace(state.items[0], tilt_x=tilt, opacity=min(enter, leave)),),
+            (replace(state.items[0], tilt_x=tilt, opacity=_smooth(min(enter, leave))),),
             state.current_index,
         )
 
@@ -335,7 +345,7 @@ class ArcLyrics(FadeLyrics):
             angle = delta*self.params["spacing"]
             rad = math.radians(angle)
             scale = .48+.52*math.exp(-distance*distance*2)
-            alpha = (.20+.80*math.exp(-distance*distance*2))*min(1, half-distance)
+            alpha = (.20+.80*math.exp(-distance*distance*2))*_smooth(clamp(half-distance))
             items.append(LyricItem(i, cx+radius*math.cos(rad),
                 cy+radius*math.sin(rad)-assets.lines[i].height*scale/2,
                 alpha, i==idx, angle=angle*.45, scale=scale, left_align=True))

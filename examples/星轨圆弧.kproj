@@ -1,0 +1,49 @@
+{
+  "files": {
+    "audio": null,
+    "cover": null,
+    "lrc": null,
+    "background": null
+  },
+  "lyric_style": {
+    "main_font": "",
+    "main_size": 64,
+    "main_color": "#FFFFFF",
+    "sub_font": "",
+    "sub_size": 48,
+    "sub_color": "#C8C8C8",
+    "stroke_color": "#101014",
+    "stroke_width": 4
+  },
+  "animations": {
+    "background": {
+      "type": "midnight",
+      "params": {}
+    },
+    "lyrics": {
+      "type": "arc",
+      "params": {}
+    },
+    "cover": {
+      "type": "celestial",
+      "params": {}
+    }
+  },
+  "colors": {
+    "auto_extract": true,
+    "primary": "#7FD1F5",
+    "secondary": "#F5C87F",
+    "stroke": "#0B0E12"
+  },
+  "output": {
+    "fps": 60,
+    "width": 1920,
+    "height": 1080,
+    "layout_preset": "landscape_mv",
+    "encoder": "auto",
+    "video_bitrate": "12M",
+    "audio_bitrate": "320k",
+    "show_metadata": true
+  },
+  "version": "1.1"
+}

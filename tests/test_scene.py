@@ -39,7 +39,7 @@ def test_fade_opacity_ramp():
     inside = scene.eval(2.0)  # 行区间 [1, 5)，fade 400ms
     assert inside.lyrics.items[0].opacity == 1.0
     entering = scene.eval(1.1)  # 100ms / 400ms
-    assert abs(entering.lyrics.items[0].opacity - 0.25) < 1e-6
+    assert abs(entering.lyrics.items[0].opacity - 0.15625) < 1e-6
 
 
 def test_scroll_list_highlight():

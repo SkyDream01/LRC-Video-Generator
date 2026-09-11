@@ -79,7 +79,7 @@ class GradientWaveBG(_BackgroundBase):
 
     def prepare(self, ctx: RenderContext) -> BgAssets:
         w, h = ctx.width, ctx.height
-        bitmap = make_gradient_wave_bg(ctx.palette.primary, ctx.palette.secondary, w, h)
+        bitmap = make_gradient_wave_bg(ctx.palette.primary, ctx.palette.secondary, w, h, self.params["amp"])
         return BgAssets(
             bitmap=bitmap,
             logical_size=(w, h),
@@ -90,10 +90,8 @@ class GradientWaveBG(_BackgroundBase):
 
     def eval(self, t: float, ctx: RenderContext) -> BgState:
         speed = self.params["speed"]
-        amp = self.params["amp"]
         x = ((t * speed) % 1.0) * ctx.width
-        y = amp * 0.03 * ctx.height * math.sin(2.0 * math.pi * t * speed / 6.0)
-        return BgState(x_offset=x, y_offset=y)
+        return BgState(x_offset=x)
 
 
 @register(KIND_BACKGROUND)
@@ -116,10 +114,10 @@ class WaveBlurBG(_BackgroundBase):
         bitmap = make_wave_blur_bg(self._source(ctx), w, h, amp_px)
         return BgAssets(
             bitmap=bitmap,
-            logical_size=(w, round(h + 2.0 * amp_px)),
+            logical_size=(w, bitmap.shape[0]),
             scale=1.0,
             mode="shift_y",
-            base_offset_px=amp_px,
+            base_offset_px=(bitmap.shape[0] - h) / 2.0,
         )
 
     def eval(self, t: float, ctx: RenderContext) -> BgState:

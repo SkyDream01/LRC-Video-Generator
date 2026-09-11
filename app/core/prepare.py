@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import math
+
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -281,7 +283,7 @@ def make_static_blur_bg(
     return blur_to_size(source, w, h)
 
 
-def make_gradient_wave_bg(primary: RGB, secondary: RGB, w: int, h: int) -> np.ndarray:
+def make_gradient_wave_bg(primary: RGB, secondary: RGB, w: int, h: int, amp: float = 0.3) -> np.ndarray:
     """可平铺渐变波浪底图：2 个水平周期、1/4 分辨率。返回 (h/Q, 2w/Q, 3) uint8。"""
     qw, qh = max(2, 2 * w // BG_DOWNSAMPLE), max(2, h // BG_DOWNSAMPLE)
     period = qw / 2.0  # 位图恰好两个周期 → 水平可平铺
@@ -293,8 +295,8 @@ def make_gradient_wave_bg(primary: RGB, secondary: RGB, w: int, h: int) -> np.nd
     bot = np.asarray(secondary, dtype=np.float64)
     grad = top[None, :] * (1.0 - tri)[:, None] + bot[None, :] * tri[:, None]  # (qh, 3)
     # 波浪亮度带：依赖 x mod period（水平周期）与 y，产生流动感
-    phase = 2.0 * np.pi * (x[None, :] / period) + 4.0 * np.pi * y[:, None]
-    band = 0.10 * np.sin(phase)  # (qh, qw)
+    phase = 2.0 * np.pi * ((x[None, :] % period) / period) + 4.0 * np.pi * y[:, None]
+    band = (amp / 3.0) * np.sin(phase)  # (qh, qw)
     arr = np.clip(
         grad[:, None, :] * (1.0 + band[..., None]) + band[..., None] * 18.0, 0, 255
     )
@@ -309,7 +311,7 @@ def make_wave_blur_bg(
     base_color: RGB = (24, 26, 34),
 ) -> np.ndarray:
     """波浪模糊底图：高度 = h + 2·amp_px（上下留振幅余量），1/4 处理后放大。"""
-    amp = max(1, round(amp_px))
+    amp = max(0, math.ceil(amp_px))
     total_h = h + 2 * amp
     if source is None:
         arr = np.empty((total_h, w, 3), dtype=np.uint8)

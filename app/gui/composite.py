@@ -190,6 +190,7 @@ def composite(painter: QPainter, state: SceneState, assets: GuiAssets) -> None:
     """在逻辑 1920×1080 坐标系内合成一帧。调用方设置好 painter 变换。"""
     painter.save()
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     _draw_background(painter, state, assets)
     _draw_cover(painter, state, assets)
     _draw_lyrics(painter, state, assets)
@@ -289,7 +290,7 @@ def _draw_lyrics(painter: QPainter, state: SceneState, assets: GuiAssets) -> Non
     else:
         painter.setClipRect(QRectF(rx, ry, rw, rh))
     for item in state.lyrics.items:
-        if item.index >= len(assets.lyric_lines):
+        if item.opacity <= 0.0 or item.reveal <= 0.0 or not 0 <= item.index < len(assets.lyric_lines):
             continue
         main_segs, sub_segs, sub_offset = assets.lyric_lines[item.index]
         painter.save()
@@ -306,33 +307,21 @@ def _draw_lyrics(painter: QPainter, state: SceneState, assets: GuiAssets) -> Non
         )
         _perspective(painter, item.x, item.y + height / 2,
                      item.tilt_x, 0.0, max(rw, height) * 2.5)
-        for seg in main_segs:
-            painter.save()
-            painter.setClipRect(
-                QRectF(
-                    item.x + seg.ox, item.y + seg.oy, seg.w * clamp(item.reveal), seg.h
-                ),
-                Qt.ClipOperation.IntersectClip,
-            )
-            painter.drawImage(QPointF(item.x + seg.ox, item.y + seg.oy), seg.image)
-            painter.restore()
         sub_shift = (min((seg.ox for seg in main_segs), default=0)
                      - min((seg.ox for seg in sub_segs), default=0)) if item.left_align else 0
-        for seg in sub_segs:
-            painter.save()
-            painter.setClipRect(
-                QRectF(
-                    item.x + seg.ox + sub_shift,
-                    item.y + sub_offset + seg.oy,
-                    seg.w * clamp(item.reveal),
-                    seg.h,
-                ),
-                Qt.ClipOperation.IntersectClip,
-            )
-            painter.drawImage(
-                QPointF(item.x + seg.ox + sub_shift, item.y + sub_offset + seg.oy), seg.image
-            )
-            painter.restore()
+        for segments, dx, dy in ((main_segs, 0.0, 0.0), (sub_segs, sub_shift, sub_offset)):
+            for seg in segments:
+                px, py = item.x + seg.ox + dx, item.y + seg.oy + dy
+                if item.reveal >= 1.0:
+                    painter.drawImage(QPointF(px, py), seg.image)
+                else:
+                    painter.save()
+                    painter.setClipRect(
+                        QRectF(px, py, seg.w * clamp(item.reveal), seg.h),
+                        Qt.ClipOperation.IntersectClip,
+                    )
+                    painter.drawImage(QPointF(px, py), seg.image)
+                    painter.restore()
         painter.restore()
     painter.restore()
 

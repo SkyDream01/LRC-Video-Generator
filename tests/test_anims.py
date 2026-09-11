@@ -227,3 +227,58 @@ def test_reference_style_roundtrip_and_arc(tmp_path):
     old = next(i for i in before.lyrics.items if i.index == 2)
     new = next(i for i in after.lyrics.items if i.index == 2)
     assert abs(old.x-new.x) < .01 and abs(old.y-new.y) < .01
+
+
+@pytest.mark.parametrize("name", sorted(EXPECTED["lyrics"]))
+def test_all_lyrics_end_and_dense_timestamps(name):
+    ctx = build_context(KProj(), ".", lrc_text="[00:01.00]A\n[00:01.20]B\n[00:01.40]C", duration_override=2)
+    layer = ANIM_REGISTRY["lyrics"][name]()
+    ctx.assets["lyrics"] = layer.prepare(ctx)
+    assert not layer.eval(2, ctx).items
+    assert not layer.eval(0, ctx).items
+    for t in (1.05, 1.1, 1.199999, 1.2, 1.3):
+        state = layer.eval(t, ctx)
+        layer.eval(1.8, ctx)
+        assert layer.eval(t, ctx) == state
+        assert all(0 <= item.opacity <= 1 for item in state.items)
+    if name in {"scroll_list", "arc"}:
+        before = {item.index: item for item in layer.eval(1.2-1e-7, ctx).items}
+        after = {item.index: item for item in layer.eval(1.2, ctx).items}
+        for index in before.keys() & after.keys():
+            assert before[index].y == pytest.approx(after[index].y, abs=.001)
+            assert before[index].opacity == pytest.approx(after[index].opacity, abs=.001)
+    else:
+        assert layer.eval(1.1, ctx).items[0].opacity == pytest.approx(1)
+
+
+def test_gradient_amplitude_changes_pixels_and_zero_is_static():
+    import numpy as np
+    from app.core.prepare import make_gradient_wave_bg
+    zero = make_gradient_wave_bg((80, 100, 160), (160, 80, 60), 1920, 1080, 0)
+    full = make_gradient_wave_bg((80, 100, 160), (160, 80, 60), 1920, 1080, 1)
+    assert np.array_equal(zero[:, 0], zero[:, 111])
+    assert not np.array_equal(zero, full)
+    assert np.array_equal(full[:, :480], full[:, 480:])
+
+
+def test_wave_source_always_contains_viewport():
+    ctx = build_context(KProj(), ".", lrc_text="", duration_override=10)
+    layer = ANIM_REGISTRY["background"]["wave_blur"]({"amp": .333})
+    assets = layer.prepare(ctx)
+    ctx.assets["background"] = assets
+    for t in range(101):
+        state = layer.eval(t / 20, ctx)
+        assert 0 <= state.y_offset <= assets.bitmap.shape[0] - ctx.height
+
+
+@pytest.mark.parametrize("kind,name", [(kind, name) for kind in ("background", "cover") for name in sorted(EXPECTED[kind])])
+def test_all_background_and_cover_seek_reuse(kind, name):
+    ctx = build_context(KProj(), ".", lrc_text="", duration_override=30)
+    ctx.cover = Image.new("RGB", (32, 32), "blue")
+    layer = ANIM_REGISTRY[kind][name]()
+    assets = layer.prepare(ctx)
+    ctx.assets[kind] = assets
+    state = layer.eval(1.125, ctx)
+    layer.eval(29, ctx)
+    assert layer.eval(1.125, ctx) == state
+    assert ctx.assets[kind] is assets
