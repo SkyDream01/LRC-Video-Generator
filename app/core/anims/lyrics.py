@@ -28,6 +28,9 @@ class LyricItem:
     current: bool
     reveal: float = 1.0
     tilt_x: float = 0.0
+    angle: float = 0.0
+    scale: float = 1.0
+    left_align: bool = False
 
 
 @dataclass(frozen=True)
@@ -293,3 +296,47 @@ class Flip3DLyrics(FadeLyrics):
             (replace(state.items[0], tilt_x=tilt, opacity=min(enter, leave)),),
             state.current_index,
         )
+
+
+@register(KIND_LYRICS)
+class ArcLyrics(FadeLyrics):
+    """沿专辑右侧圆弧滚动，靠近焦点时连续放大与提亮。"""
+
+    anim_type: ClassVar[str] = "arc"
+    label: ClassVar[str] = "圆弧歌词"
+
+    @classmethod
+    def params_schema(cls) -> list[ParamSpec]:
+        return [
+            ParamSpec("lines", "可见行数", "int", 7, 3, 9),
+            ParamSpec("spacing", "圆弧间隔 (度)", "float", 18.0, 12.0, 24.0),
+            ParamSpec("transition_ms", "换行时长 (ms)", "int", 650, 100, 1500),
+        ]
+
+    def eval(self, t: float, ctx: RenderContext) -> LyricsState:
+        assets = cast(LyricsAssets, ctx.assets[KIND_LYRICS])
+        idx = current_index(assets.starts, t)
+        if idx < 0 or idx >= len(assets.lines) or t >= ctx.intervals[idx][1]:
+            return LyricsState()
+        start, end = ctx.intervals[idx]
+        seconds = min(self.params["transition_ms"]/1000, (end-start)/2)
+        progress = clamp((t-start)/seconds) if seconds > 0 else 1.0
+        focus = max(0, idx-1+_ease_cubic(progress))
+        x, y, w, h = ctx.layout.cover_rect
+        cx, cy = x+w/2, y+h/2
+        radius = assets.rect[0]-cx+12
+        half = self.params["lines"]/2
+        items = []
+        for i in range(max(0, math.floor(focus-half)), min(len(assets.lines), math.ceil(focus+half)+1)):
+            delta = i-focus
+            distance = abs(delta)
+            if distance >= half:
+                continue
+            angle = delta*self.params["spacing"]
+            rad = math.radians(angle)
+            scale = .48+.52*math.exp(-distance*distance*2)
+            alpha = (.20+.80*math.exp(-distance*distance*2))*min(1, half-distance)
+            items.append(LyricItem(i, cx+radius*math.cos(rad),
+                cy+radius*math.sin(rad)-assets.lines[i].height*scale/2,
+                alpha, i==idx, angle=angle*.45, scale=scale, left_align=True))
+        return LyricsState(tuple(items), idx)

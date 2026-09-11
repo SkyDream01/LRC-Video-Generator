@@ -120,6 +120,8 @@ class GuiAssets:
     lyric_lines: list[
         tuple[list[GuiBitmap], list[GuiBitmap], float]
     ]  # (main, sub, sub_offset)
+    cover_ornament: GuiBitmap | None
+    arc_lyrics: bool
     meta_segments: list[GuiBitmap]
 
     @classmethod
@@ -174,6 +176,8 @@ class GuiAssets:
             cover_disc=cover.disc if cover else False,
             lyric_lines=lines,
             meta_segments=meta_segments,
+            cover_ornament=_gui_bitmap(cover.ornament) if cover else None,
+            arc_lyrics=ctx.project.animations.lyrics.type == "arc",
         )
 
 
@@ -264,6 +268,13 @@ def _draw_cover(painter: QPainter, state: SceneState, assets: GuiAssets) -> None
             QRectF(cx - face.w / 2.0, cy - face.h / 2.0, face.w, face.h), face.image
         )
     painter.restore()
+    if assets.cover_ornament is not None:
+        ornament = assets.cover_ornament
+        painter.save()
+        painter.translate(cx, cy)
+        painter.rotate(state.cover.angle)
+        painter.drawImage(QRectF(-ornament.w/2, -ornament.h/2, ornament.w, ornament.h), ornament.image)
+        painter.restore()
 
     painter.restore()
 
@@ -273,13 +284,22 @@ def _draw_lyrics(painter: QPainter, state: SceneState, assets: GuiAssets) -> Non
         return
     painter.save()
     rx, ry, rw, rh = assets.lyric_rect
-    painter.setClipRect(QRectF(rx, ry, rw, rh))
+    if assets.arc_lyrics:
+        painter.setClipRect(QRectF(0, 0, *assets.canvas))
+    else:
+        painter.setClipRect(QRectF(rx, ry, rw, rh))
     for item in state.lyrics.items:
         if item.index >= len(assets.lyric_lines):
             continue
         main_segs, sub_segs, sub_offset = assets.lyric_lines[item.index]
         painter.save()
         painter.setOpacity(clamp(item.opacity))
+        if item.left_align:
+            left = min((seg.ox for seg in main_segs), default=0)
+            painter.translate(item.x, item.y)
+            painter.rotate(item.angle)
+            painter.scale(item.scale, item.scale)
+            painter.translate(-item.x-left, -item.y)
         height = max(
             [seg.oy + seg.h for seg in main_segs]
             + [sub_offset + seg.oy + seg.h for seg in sub_segs], default=0.0
@@ -296,11 +316,13 @@ def _draw_lyrics(painter: QPainter, state: SceneState, assets: GuiAssets) -> Non
             )
             painter.drawImage(QPointF(item.x + seg.ox, item.y + seg.oy), seg.image)
             painter.restore()
+        sub_shift = (min((seg.ox for seg in main_segs), default=0)
+                     - min((seg.ox for seg in sub_segs), default=0)) if item.left_align else 0
         for seg in sub_segs:
             painter.save()
             painter.setClipRect(
                 QRectF(
-                    item.x + seg.ox,
+                    item.x + seg.ox + sub_shift,
                     item.y + sub_offset + seg.oy,
                     seg.w * clamp(item.reveal),
                     seg.h,
@@ -308,7 +330,7 @@ def _draw_lyrics(painter: QPainter, state: SceneState, assets: GuiAssets) -> Non
                 Qt.ClipOperation.IntersectClip,
             )
             painter.drawImage(
-                QPointF(item.x + seg.ox, item.y + sub_offset + seg.oy), seg.image
+                QPointF(item.x + seg.ox + sub_shift, item.y + sub_offset + seg.oy), seg.image
             )
             painter.restore()
         painter.restore()

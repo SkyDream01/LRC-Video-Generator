@@ -148,3 +148,18 @@ class BreathZoomBG(StaticBlurBG):
     def eval(self, t: float, ctx: RenderContext) -> BgState:
         pulse = (1.0 - math.cos(2.0 * math.pi * t / self.params["period"])) / 2.0
         return BgState(zoom=1.0 + self.params["amount"] * pulse)
+
+
+@register(KIND_BACKGROUND)
+class MidnightBG(StaticBlurBG):
+    """深蓝径向雾光背景，与封面颜色无关。"""
+
+    anim_type: ClassVar[str] = "midnight"
+    label: ClassVar[str] = "午夜雾蓝"
+
+    def prepare(self, ctx: RenderContext) -> BgAssets:
+        w, h = ctx.width, ctx.height
+        yy, xx = np.mgrid[0:h:4, 0:w:4]
+        light = np.exp(-(((xx-w*.36)/(w*.40))**2 + ((yy-h*.46)/(h*.75))**2)*1.8)
+        bitmap = np.stack([12+light*36, 21+light*47, 35+light*55], axis=-1).astype(np.uint8)
+        return BgAssets(bitmap, (w, h), .25, "blit")

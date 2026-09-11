@@ -252,3 +252,12 @@ def test_perspective_projects_plane_and_preserves_scaled_center(axis):
         assert point.y() == pytest.approx((200 + expected_y / denominator) / 2)
     finally:
         painter.end()
+
+
+def test_celestial_arc_composite():
+    scene, gui = _make_scene(LYRC, {"background": "midnight", "cover": "celestial", "lyrics": "arc"})
+    first = _render(scene.eval(2), gui)
+    assert first == _render(scene.eval(2), gui)
+    assert first != _render(scene.eval(3), gui)
+    assert gui.cover_ornament is not None
+    assert gui.arc_lyrics

@@ -16,9 +16,9 @@ from app.core.context import build_context
 from app.core.project import KProj, load_kproj, save_kproj
 
 EXPECTED = {
-    "background": {"static_blur", "gradient_wave", "wave_blur", "breath_zoom"},
-    "lyrics": {"fade", "scroll_list", "slide", "reveal", "flip_3d"},
-    "cover": {"static", "disc_rotate", "breath", "float", "rock_3d"},
+    "background": {"static_blur", "gradient_wave", "wave_blur", "breath_zoom", "midnight"},
+    "lyrics": {"fade", "scroll_list", "slide", "reveal", "flip_3d", "arc"},
+    "cover": {"static", "disc_rotate", "breath", "float", "rock_3d", "celestial"},
 }
 
 
@@ -200,3 +200,30 @@ def test_3d_cover_is_periodic_and_bounded():
         assert abs(state.tilt_x) <= 45 * 0.45
         assert abs(state.tilt_y) <= 45
         assert state.reflection_alpha == 0
+
+
+def test_reference_style_roundtrip_and_arc(tmp_path):
+    from pathlib import Path
+    from app.core.scene import Scene
+    project = load_kproj(Path(__file__).resolve().parents[1] / "examples/星轨圆弧.kproj")
+    saved = save_kproj(project, tmp_path / "style.kproj")
+    assert load_kproj(saved) == project
+    text = "\n".join(f"[00:{i*3:02d}.00]Line {i}" for i in range(8))
+    ctx = build_context(project, tmp_path, lrc_text=text, duration_override=24)
+    ctx.cover = Image.new("RGB", (100, 100), "blue")
+    scene = Scene(ctx)
+    scene.prepare()
+    state = scene.eval(10)
+    assert scene.eval(10) == state
+    current = next(item for item in state.lyrics.items if item.current)
+    assert current.angle == 0 and current.scale == 1 and current.opacity == 1
+    assert all(item.scale < 1 for item in state.lyrics.items if not item.current)
+    assert scene.eval(-1).lyrics.items == ()
+    assert scene.eval(24).lyrics.items == ()
+    face = ctx.assets["cover"].face.pixels
+    assert face[0, 0, 3] == 0 and face[360, 360, 3] == 255
+    assert scene.eval(10).cover.angle != scene.eval(11).cover.angle
+    before, after = scene.eval(9-1e-6), scene.eval(9)
+    old = next(i for i in before.lyrics.items if i.index == 2)
+    new = next(i for i in after.lyrics.items if i.index == 2)
+    assert abs(old.x-new.x) < .01 and abs(old.y-new.y) < .01

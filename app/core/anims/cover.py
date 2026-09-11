@@ -37,6 +37,7 @@ class CoverAssets:
     reflection_gap: float = 24.0
     disc: bool = False
     size: float = 0.0
+    ornament: PreparedBitmap | None = None
 
 
 @register(KIND_COVER)
@@ -156,3 +157,69 @@ class Rock3DCover(StaticCover):
             tilt_x=self.params["angle"] * 0.45 * math.cos(phase),
             tilt_y=self.params["angle"] * math.sin(phase),
         )
+
+
+@register(KIND_COVER)
+class CelestialCover(BaseLayer):
+    """圆形专辑配透明齿轮星轨，封面与旋转装饰分别缓存。"""
+
+    kind: ClassVar[str] = KIND_COVER
+    anim_type: ClassVar[str] = "celestial"
+    label: ClassVar[str] = "星轨齿轮"
+
+    @classmethod
+    def params_schema(cls) -> list[ParamSpec]:
+        return [ParamSpec("rpm", "光环转速 (RPM)", "float", 0.6, -3.0, 3.0)]
+
+    def prepare(self, ctx: RenderContext) -> CoverAssets:
+        import numpy as np
+        from PIL import Image, ImageDraw, ImageFilter, ImageOps
+
+        size = int(ctx.layout.cover_rect[2])
+        n = size * 2
+        face = Image.new("RGBA", (n, n))
+        diameter = round(n * 0.78)
+        inset = (n - diameter) // 2
+        if ctx.cover is not None:
+            art = ImageOps.fit(ctx.cover.convert("RGBA"), (diameter, diameter))
+            mask = Image.new("L", art.size)
+            ImageDraw.Draw(mask).ellipse((1, 1, diameter-2, diameter-2), fill=255)
+            art.putalpha(mask)
+            face.alpha_composite(art, (inset, inset))
+        ink = Image.new("RGBA", (n, n))
+        draw = ImageDraw.Draw(ink)
+        c = n / 2
+        for radius, alpha in ((0.393, 170), (0.408, 85), (0.48, 55), (0.497, 30)):
+            r = n * radius
+            draw.ellipse((c-r, c-r, c+r, c+r), outline=(168, 222, 219, alpha), width=2)
+        points = []
+        for i in range(240):
+            a = i * math.tau / 240
+            r = n * (0.444 if i % 4 in (1, 2) else 0.433)
+            points.append((c+r*math.cos(a), c+r*math.sin(a)))
+        draw.line(points+[points[0]], fill=(165, 228, 216, 170), width=3)
+        for i in range(72):
+            a = i * math.tau / 72
+            r1, r2 = n * 0.48, n * (0.491 if i % 6 == 0 else 0.485)
+            draw.line((c+r1*math.cos(a), c+r1*math.sin(a),
+                       c+r2*math.cos(a), c+r2*math.sin(a)), fill=(180, 216, 220, 100), width=2)
+        for a, radius in ((-1.35, .095), (.95, .12), (1.30, .065)):
+            gx, gy = c+n*.34*math.cos(a), c+n*.34*math.sin(a)
+            r = n*radius
+            teeth = []
+            for i in range(96):
+                angle = i*math.tau/96
+                rr = r*(1 if i%4 in (1,2) else .91)
+                teeth.append((gx+rr*math.cos(angle), gy+rr*math.sin(angle)))
+            draw.line(teeth+[teeth[0]], fill=(181, 224, 215, 150), width=2)
+            for ratio in (.72, .40):
+                rr = r*ratio
+                draw.ellipse((gx-rr, gy-rr, gx+rr, gy+rr), outline=(177, 225, 219, 100), width=2)
+        glow = ink.filter(ImageFilter.GaussianBlur(9))
+        glow.alpha_composite(ink)
+        def bitmap(image):
+            return PreparedBitmap(np.array(image.resize((size, size), Image.Resampling.LANCZOS)))
+        return CoverAssets(bitmap(face), None, size=size, ornament=bitmap(glow))
+
+    def eval(self, t: float, ctx: RenderContext) -> CoverState:
+        return CoverState(angle=(t*self.params["rpm"]*6) % 360)
