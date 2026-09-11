@@ -47,6 +47,37 @@ def _render(state, gui_assets) -> QImage:
 LYRC = "[00:01.00]Hello world\n[00:01.00]你好世界\n[00:05.00]Second line\n"
 
 
+@pytest.mark.parametrize("background", [
+    "static_blur", "gradient_wave", "wave_blur", "breath_zoom",
+])
+def test_native_assets_match_original_pixel_formats(background, monkeypatch):
+    """原生贴图格式在旋转、半透明歌词和缩放下保持金帧容差。"""
+    import importlib
+
+    module = importlib.import_module("app.gui.composite")
+    scene, optimized = _make_scene(
+        LYRC, {"background": background, "cover": "disc_rotate", "lyrics": "fade"}
+    )
+
+    def original_bitmap(pb):
+        if pb is None or pb.pixels.size == 0:
+            return None
+        return module.GuiBitmap(
+            module.numpy_to_qimage(pb.pixels), *pb.origin, pb.width, pb.height
+        )
+
+    monkeypatch.setattr(module, "_gui_bitmap", original_bitmap)
+    original = GuiAssets.from_context(scene.ctx)
+    original.bg_image = module.numpy_to_qimage(scene.ctx.assets["background"].bitmap)
+    for t in (0.0, 1.05, 2.0, 5.2):
+        a = qimage_to_rgb_array(_render(scene.eval(t), original)).astype(np.int16)
+        b = qimage_to_rgb_array(_render(scene.eval(t), optimized)).astype(np.int16)
+        diff = np.abs(a - b)
+        # 8 位预乘 alpha 的舍入只影响边缘，整帧平均误差应远小于 1。
+        assert diff.max() <= 8
+        assert diff.mean() < 0.1
+
+
 def test_composite_produces_non_black_frame():
     scene, gui = _make_scene(LYRC)
     img = _render(scene.eval(2.0), gui)
@@ -161,6 +192,8 @@ def test_qimage_rgb24_buffer_reuses_scratch_for_padded_rows():
         ("background", "breath_zoom"),
         ("cover", "breath"),
         ("cover", "float"),
+        ("lyrics", "flip_3d"),
+        ("cover", "rock_3d"),
         ("lyrics", "slide"),
         ("lyrics", "reveal"),
     ],
@@ -193,3 +226,29 @@ def test_new_effects_change_pixels_and_restore_painter(kind, name):
     assert painter.opacity() == 1
     assert not painter.hasClipping()
     painter.end()
+
+
+@pytest.mark.parametrize("axis", ["x", "y"])
+def test_perspective_projects_plane_and_preserves_scaled_center(axis):
+    from app.gui.composite import _perspective
+    from PySide6.QtCore import QPointF
+    import math
+
+    image = QImage(400, 400, QImage.Format.Format_RGB888)
+    painter = QPainter(image)
+    try:
+        painter.scale(0.5, 0.5)
+        _perspective(painter, 200, 200, 30 if axis == "x" else 0,
+                     30 if axis == "y" else 0, 1000)
+        transform = painter.worldTransform()
+        center = transform.map(QPointF(200, 200))
+        assert center.x() == pytest.approx(100)
+        assert center.y() == pytest.approx(100)
+        point = transform.map(QPointF(300, 300))
+        denominator = 1 + (0.05 if axis == "y" else -0.05)
+        expected_x = 100 * (math.cos(math.pi / 6) if axis == "y" else 1)
+        expected_y = 100 * (math.cos(math.pi / 6) if axis == "x" else 1)
+        assert point.x() == pytest.approx((200 + expected_x / denominator) / 2)
+        assert point.y() == pytest.approx((200 + expected_y / denominator) / 2)
+    finally:
+        painter.end()

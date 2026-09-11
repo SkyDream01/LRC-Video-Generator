@@ -355,6 +355,7 @@ PCM 回退路径: 主时钟用已写入 QAudioSink 的帧数，不用 QMediaPlay
 | 光栅化与合成分离 | 字体/描边/模糊/唱片贴图只在 prepare；每帧只 blit/rotate |
 | 文本渲染缓存 | 每行紧 bbox RGBA + origin；淡入淡出/滚动只改 alpha 与位移 |
 | 背景缓存 | 静态模糊只算一次；波浪用 1/4 分辨率相位图 + 平移 UV |
+| Qt 贴图格式 | GuiAssets 创建时背景转 RGB32，透明贴图转 ARGB32_Premultiplied，避免逐帧缩放/混合重复转换；预览和导出共用，导出目标仍为 RGB888 |
 | 模糊降采样 | 高斯模糊先缩小 4 倍再放大，约 16× |
 | 唱片旋转 | composite 内 QPainter.rotate 小贴图，禁止全帧 rotate / 手写 warp |
 | 预览分辨率 | 资源按 1920×1080 一份；播放中 painter.scale；暂停可离屏满分辨率 |
@@ -519,6 +520,24 @@ scale/filter 路径完成 BT.709 limited-range 转换。非 4 字节对齐行距
 揭幕按行的时间触发，主歌词与译文分别从左向右显现，并非逐词高亮。
 背景缩放范围为 1 至 1+amount，居中裁切避免黑边；封面缩放范围为 1-amount 至 1。
 所有新动画复用 prepare 位图，eval 仅计算状态，共用 composite 完成裁切、缩放和位移。
+
+3D 动画配置示例（替换对应动画项）：
+
+```json
+{
+  "lyrics": {"type": "flip_3d", "params": {"fade_ms": 650, "angle": 65.0}},
+  "cover": {"type": "rock_3d", "params": {"period": 6.0, "angle": 24.0}}
+}
+```
+
+歌词「3D 翻转」将主歌词、换行文本和译文作为整体绕水平轴翻入、翻出，
+中间正面停留；短行将过渡压缩到半个行区间，过渡设为 0 时立即显示。
+角度范围 0–80 度，过渡范围 0–2000ms。
+封面「3D 摇摆」绕双轴周期摆动，角度范围 0–45 度，周期范围 1–30 秒；
+该效果隐藏平面倒影以免与透视封面错位。
+两者复用 prepare 的紧 bbox 位图，eval 只输出角度，composite 以 QTransform
+透视投影小图层（相机距离为图层最大尺寸的 2.5 倍），预览与导出共用。
+这属于平面贴图的 3D 透视效果，不需要额外 GPU 或 3D 引擎。
 
 v1 `layout_preset` 仅实现 `landscape_mv`（封面左 / 歌词右）。schema 预留以便后续 `portrait_9_16` 等，避免再破格式。
 

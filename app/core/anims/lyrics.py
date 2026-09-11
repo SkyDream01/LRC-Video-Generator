@@ -27,6 +27,7 @@ class LyricItem:
     opacity: float
     current: bool
     reveal: float = 1.0
+    tilt_x: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -261,3 +262,34 @@ class RevealLyrics(FadeLyrics):
             reveal=progress,
         )
         return LyricsState((item,), idx)
+
+
+@register(KIND_LYRICS)
+class Flip3DLyrics(FadeLyrics):
+    """双语歌词整体透视翻入、翻出，停留期间正面展示。"""
+
+    anim_type: ClassVar[str] = "flip_3d"
+    label: ClassVar[str] = "3D 翻转"
+
+    @classmethod
+    def params_schema(cls) -> list[ParamSpec]:
+        return [
+            ParamSpec("fade_ms", "过渡时长 (ms)", "int", 650, 0, 2000),
+            ParamSpec("angle", "翻转角度 (度)", "float", 65.0, 0.0, 80.0),
+        ]
+
+    def eval(self, t: float, ctx: RenderContext) -> LyricsState:
+        state = super().eval(t, ctx)
+        if not state.items:
+            return state
+        start, end = ctx.intervals[state.current_index]
+        if t >= end:
+            return LyricsState()
+        seconds = min(self.params["fade_ms"] / 1000.0, (end - start) / 2.0)
+        enter = clamp((t - start) / seconds) if seconds > 0 else 1.0
+        leave = clamp((end - t) / seconds) if seconds > 0 else 1.0
+        tilt = self.params["angle"] * ((1 - enter) ** 3 - (1 - leave) ** 3)
+        return LyricsState(
+            (replace(state.items[0], tilt_x=tilt, opacity=min(enter, leave)),),
+            state.current_index,
+        )

@@ -17,8 +17,8 @@ from app.core.project import KProj, load_kproj, save_kproj
 
 EXPECTED = {
     "background": {"static_blur", "gradient_wave", "wave_blur", "breath_zoom"},
-    "lyrics": {"fade", "scroll_list", "slide", "reveal"},
-    "cover": {"static", "disc_rotate", "breath", "float"},
+    "lyrics": {"fade", "scroll_list", "slide", "reveal", "flip_3d"},
+    "cover": {"static", "disc_rotate", "breath", "float", "rock_3d"},
 }
 
 
@@ -105,6 +105,8 @@ def test_params_schema_titles_present():
 
 
 NEW_ANIMS = [
+    ("lyrics", "flip_3d"),
+    ("cover", "rock_3d"),
     ("background", "breath_zoom"),
     ("lyrics", "slide"),
     ("lyrics", "reveal"),
@@ -137,7 +139,7 @@ def test_new_animations_seek_roundtrip_and_resource_reuse(kind, name, tmp_path):
         assert cls.resolve_params({param.key: 99999})[param.key] == param.max
 
 
-@pytest.mark.parametrize("name", ["slide", "reveal"])
+@pytest.mark.parametrize("name", ["slide", "reveal", "flip_3d"])
 def test_new_lyrics_boundaries_short_lines_and_zero_duration(name):
     ctx = build_context(
         KProj(), ".", lrc_text="[00:01.00]A\n[00:01.20]B", duration_override=2
@@ -151,7 +153,7 @@ def test_new_lyrics_boundaries_short_lines_and_zero_duration(name):
     assert midpoint.opacity == pytest.approx(1)
     assert midpoint.reveal == pytest.approx(1)
     assert layer.eval(1.2, ctx).current_index == 1
-    key = "fade_ms" if name == "slide" else "reveal_ms"
+    key = "fade_ms" if name in {"slide", "flip_3d"} else "reveal_ms"
     immediate = cls({key: 0}).eval(1, ctx).items[0]
     assert immediate.opacity == immediate.reveal == 1
     empty = build_context(KProj(), ".", lrc_text="", duration_override=2)
@@ -175,3 +177,26 @@ def test_periodic_motion_bounds(kind, name, field, low, high):
     assert min(values) == pytest.approx(low)
     assert max(values) == pytest.approx(high)
     assert values[0] == pytest.approx(values[-1])
+
+
+def test_3d_lyrics_settle_and_flip_out():
+    ctx = build_context(KProj(), ".", lrc_text="[00:01.00]A", duration_override=5)
+    layer = ANIM_REGISTRY["lyrics"]["flip_3d"]()
+    ctx.assets["lyrics"] = layer.prepare(ctx)
+    assert layer.eval(1.1, ctx).items[0].tilt_x > 0
+    assert layer.eval(3, ctx).items[0].tilt_x == 0
+    assert layer.eval(4.9, ctx).items[0].tilt_x < 0
+
+
+def test_3d_cover_is_periodic_and_bounded():
+    ctx = build_context(KProj(), ".", lrc_text="", duration_override=30)
+    layer = ANIM_REGISTRY["cover"]["rock_3d"]({"angle": 45})
+    first = layer.eval(0, ctx)
+    last = layer.eval(layer.params["period"], ctx)
+    assert first.tilt_x == pytest.approx(last.tilt_x)
+    assert first.tilt_y == pytest.approx(last.tilt_y, abs=1e-10)
+    for i in range(101):
+        state = layer.eval(i / 10, ctx)
+        assert abs(state.tilt_x) <= 45 * 0.45
+        assert abs(state.tilt_y) <= 45
+        assert state.reflection_alpha == 0

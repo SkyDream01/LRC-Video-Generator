@@ -8,10 +8,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 import numpy as np
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QImage, QPainter
+from PySide6.QtGui import QImage, QPainter, QTransform
 
 from ..core.anims.background import BgAssets
 from ..core.anims.base import clamp
@@ -91,7 +92,13 @@ def _gui_bitmap(pb: PreparedBitmap | None) -> GuiBitmap | None:
     if pb is None or pb.pixels.size == 0:
         return None
     return GuiBitmap(
-        numpy_to_qimage(pb.pixels), pb.origin[0], pb.origin[1], pb.width, pb.height
+        numpy_to_qimage(pb.pixels).convertToFormat(
+            QImage.Format.Format_ARGB32_Premultiplied
+        ),
+        pb.origin[0],
+        pb.origin[1],
+        pb.width,
+        pb.height,
     )
 
 
@@ -124,7 +131,13 @@ class GuiAssets:
         bg: BgAssets | None = None
         if KIND_BG in ctx.assets and isinstance(ctx.assets[KIND_BG], BgAssets):
             bg = ctx.assets[KIND_BG]  # type: ignore[assignment]
-        bg_image = numpy_to_qimage(bg.bitmap) if bg is not None else None
+        # 在资源准备阶段转换为 Qt 光栅引擎的原生格式，避免缩放/混合时
+        # 每帧重复转换 RGB888 和 straight alpha。导出目标仍为紧凑 RGB888。
+        bg_image = (
+            numpy_to_qimage(bg.bitmap).convertToFormat(QImage.Format.Format_RGB32)
+            if bg is not None
+            else None
+        )
 
         cover: CoverAssets | None = None
         if KIND_COVER in ctx.assets and isinstance(ctx.assets[KIND_COVER], CoverAssets):
@@ -199,6 +212,22 @@ def _draw_background(painter: QPainter, state: SceneState, assets: GuiAssets) ->
     painter.drawImage(QRectF(0.0, 0.0, w, h), img, src)
 
 
+def _perspective(painter: QPainter, cx: float, cy: float,
+                 tilt_x: float, tilt_y: float, distance: float) -> None:
+    """围绕图层中心投影旋转后的平面，保留调用方的预览缩放。"""
+    if tilt_x == 0.0 and tilt_y == 0.0:
+        return
+    ax, ay = math.radians(tilt_x), math.radians(tilt_y)
+    sx, sy, co_x, co_y = math.sin(ax), math.sin(ay), math.cos(ax), math.cos(ay)
+    painter.translate(cx, cy)
+    painter.setWorldTransform(QTransform(
+        co_y, 0.0, sy / distance,
+        sx * sy, co_x, -sx * co_y / distance,
+        0.0, 0.0, 1.0,
+    ), True)
+    painter.translate(-cx, -cy)
+
+
 def _draw_cover(painter: QPainter, state: SceneState, assets: GuiAssets) -> None:
     face = assets.cover_face
     if face is None:
@@ -223,6 +252,7 @@ def _draw_cover(painter: QPainter, state: SceneState, assets: GuiAssets) -> None
         painter.restore()
 
     painter.save()
+    _perspective(painter, cx, cy, state.cover.tilt_x, state.cover.tilt_y, max(w, h) * 2.5)
     if assets.cover_disc and state.cover.angle != 0.0:
         painter.translate(cx, cy)
         painter.rotate(state.cover.angle)
@@ -250,6 +280,12 @@ def _draw_lyrics(painter: QPainter, state: SceneState, assets: GuiAssets) -> Non
         main_segs, sub_segs, sub_offset = assets.lyric_lines[item.index]
         painter.save()
         painter.setOpacity(clamp(item.opacity))
+        height = max(
+            [seg.oy + seg.h for seg in main_segs]
+            + [sub_offset + seg.oy + seg.h for seg in sub_segs], default=0.0
+        )
+        _perspective(painter, item.x, item.y + height / 2,
+                     item.tilt_x, 0.0, max(rw, height) * 2.5)
         for seg in main_segs:
             painter.save()
             painter.setClipRect(

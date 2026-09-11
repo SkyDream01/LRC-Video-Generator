@@ -24,6 +24,8 @@ class CoverState:
     reflection_alpha: float = 0.0
     scale: float = 1.0
     y_offset: float = 0.0
+    tilt_x: float = 0.0
+    tilt_y: float = 0.0
 
 
 @dataclass
@@ -132,3 +134,25 @@ class FloatCover(StaticCover):
             2.0 * math.pi * t / self.params["period"]
         )
         return CoverState(reflection_alpha=0.55, y_offset=offset)
+
+
+@register(KIND_COVER)
+class Rock3DCover(StaticCover):
+    """封面绕水平、竖直轴周期摇摆，始终保持正面可见。"""
+
+    anim_type: ClassVar[str] = "rock_3d"
+    label: ClassVar[str] = "3D 摇摆"
+
+    @classmethod
+    def params_schema(cls) -> list[ParamSpec]:
+        return [
+            ParamSpec("period", "周期 (秒)", "float", 6.0, 1.0, 30.0),
+            ParamSpec("angle", "摇摆角度 (度)", "float", 24.0, 0.0, 45.0),
+        ]
+
+    def eval(self, t: float, ctx: RenderContext) -> CoverState:
+        phase = 2.0 * math.pi * t / self.params["period"]
+        return CoverState(
+            tilt_x=self.params["angle"] * 0.45 * math.cos(phase),
+            tilt_y=self.params["angle"] * math.sin(phase),
+        )
