@@ -1,6 +1,13 @@
 """动画层包：导入各模块以填充注册表（策略模式 + ANIM_REGISTRY）。"""
 
-from .background import BgAssets, BgState, GradientWaveBG, StaticBlurBG, WaveBlurBG
+from .background import (
+    BgAssets,
+    BgState,
+    BreathZoomBG,
+    GradientWaveBG,
+    StaticBlurBG,
+    WaveBlurBG,
+)
 from .base import (
     ANIM_REGISTRY,
     KIND_BACKGROUND,
@@ -12,28 +19,48 @@ from .base import (
     clamp,
     layer_class,
 )
-from .cover import CoverAssets, CoverState, DiscRotate, StaticCover
-from .lyrics import FadeLyrics, LyricItem, LyricsAssets, LyricsState, ScrollListLyrics
+from .cover import (
+    BreathCover,
+    CoverAssets,
+    CoverState,
+    DiscRotate,
+    FloatCover,
+    StaticCover,
+)
+from .lyrics import (
+    FadeLyrics,
+    LyricItem,
+    LyricsAssets,
+    LyricsState,
+    RevealLyrics,
+    ScrollListLyrics,
+    SlideLyrics,
+)
 
 __all__ = [
     "ANIM_REGISTRY",
-    "BaseLayer",
-    "BgAssets",
-    "BgState",
-    "CoverAssets",
-    "CoverState",
-    "DiscRotate",
-    "FadeLyrics",
-    "GradientWaveBG",
     "KINDS",
     "KIND_BACKGROUND",
     "KIND_COVER",
     "KIND_LYRICS",
+    "BaseLayer",
+    "BgAssets",
+    "BgState",
+    "BreathCover",
+    "BreathZoomBG",
+    "CoverAssets",
+    "CoverState",
+    "DiscRotate",
+    "FadeLyrics",
+    "FloatCover",
+    "GradientWaveBG",
     "LyricItem",
     "LyricsAssets",
     "LyricsState",
     "ParamSpec",
+    "RevealLyrics",
     "ScrollListLyrics",
+    "SlideLyrics",
     "StaticBlurBG",
     "StaticCover",
     "WaveBlurBG",

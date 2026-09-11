@@ -1,4 +1,4 @@
-"""封面动画：静态展示（含倒影）/ 黑胶唱片旋转。"""
+"""封面动画：静态展示 / 黑胶唱片 / 呼吸缩放 / 悬浮。"""
 
 from __future__ import annotations
 
@@ -22,6 +22,8 @@ class CoverState:
 
     angle: float = 0.0
     reflection_alpha: float = 0.0
+    scale: float = 1.0
+    y_offset: float = 0.0
 
 
 @dataclass
@@ -88,3 +90,45 @@ class DiscRotate(BaseLayer):
         rpm = self.params["rpm"]
         angle = (t * rpm * 6.0) % 360.0
         return CoverState(angle=angle, reflection_alpha=clamp(0.30))
+
+
+@register(KIND_COVER)
+class BreathCover(StaticCover):
+    """封面与倒影同步柔和缩放。"""
+
+    anim_type: ClassVar[str] = "breath"
+    label: ClassVar[str] = "呼吸缩放"
+
+    @classmethod
+    def params_schema(cls) -> list[ParamSpec]:
+        return [
+            ParamSpec("period", "周期 (秒)", "float", 6.0, 1.0, 30.0),
+            ParamSpec("amount", "缩放幅度", "float", 0.05, 0.0, 0.15),
+        ]
+
+    def eval(self, t: float, ctx: RenderContext) -> CoverState:
+        pulse = (1.0 - math.cos(2.0 * math.pi * t / self.params["period"])) / 2.0
+        return CoverState(
+            reflection_alpha=0.55, scale=1.0 - self.params["amount"] * pulse
+        )
+
+
+@register(KIND_COVER)
+class FloatCover(StaticCover):
+    """封面与倒影沿竖直方向平滑悬浮。"""
+
+    anim_type: ClassVar[str] = "float"
+    label: ClassVar[str] = "悬浮"
+
+    @classmethod
+    def params_schema(cls) -> list[ParamSpec]:
+        return [
+            ParamSpec("period", "周期 (秒)", "float", 5.0, 1.0, 30.0),
+            ParamSpec("distance", "悬浮距离 (px)", "float", 18.0, 0.0, 48.0),
+        ]
+
+    def eval(self, t: float, ctx: RenderContext) -> CoverState:
+        offset = self.params["distance"] * math.sin(
+            2.0 * math.pi * t / self.params["period"]
+        )
+        return CoverState(reflection_alpha=0.55, y_offset=offset)

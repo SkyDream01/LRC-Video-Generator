@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from PySide6.QtCore import QPointF, QRectF
+from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QImage, QPainter
 
 from ..core.anims.background import BgAssets
@@ -194,7 +194,8 @@ def _draw_background(painter: QPainter, state: SceneState, assets: GuiAssets) ->
         y0 = max(0.0, state.bg.y_offset)
         src = QRectF(0.0, y0 * scale, w * scale, h * scale)
     else:
-        src = QRectF(0.0, 0.0, img.width(), img.height())
+        sw, sh = img.width() / state.bg.zoom, img.height() / state.bg.zoom
+        src = QRectF((img.width() - sw) / 2, (img.height() - sh) / 2, sw, sh)
     painter.drawImage(QRectF(0.0, 0.0, w, h), img, src)
 
 
@@ -205,6 +206,11 @@ def _draw_cover(painter: QPainter, state: SceneState, assets: GuiAssets) -> None
     x, y, w, h = assets.cover_rect
     cx = x + w / 2.0
     cy = y + h / 2.0
+
+    painter.save()
+    painter.translate(cx, cy + state.cover.y_offset)
+    painter.scale(state.cover.scale, state.cover.scale)
+    painter.translate(-cx, -cy)
 
     reflection = assets.cover_reflection
     if reflection is not None and state.cover.reflection_alpha > 0.0:
@@ -229,6 +235,8 @@ def _draw_cover(painter: QPainter, state: SceneState, assets: GuiAssets) -> None
         )
     painter.restore()
 
+    painter.restore()
+
 
 def _draw_lyrics(painter: QPainter, state: SceneState, assets: GuiAssets) -> None:
     if not state.lyrics.items:
@@ -240,13 +248,34 @@ def _draw_lyrics(painter: QPainter, state: SceneState, assets: GuiAssets) -> Non
         if item.index >= len(assets.lyric_lines):
             continue
         main_segs, sub_segs, sub_offset = assets.lyric_lines[item.index]
+        painter.save()
         painter.setOpacity(clamp(item.opacity))
         for seg in main_segs:
+            painter.save()
+            painter.setClipRect(
+                QRectF(
+                    item.x + seg.ox, item.y + seg.oy, seg.w * clamp(item.reveal), seg.h
+                ),
+                Qt.ClipOperation.IntersectClip,
+            )
             painter.drawImage(QPointF(item.x + seg.ox, item.y + seg.oy), seg.image)
+            painter.restore()
         for seg in sub_segs:
+            painter.save()
+            painter.setClipRect(
+                QRectF(
+                    item.x + seg.ox,
+                    item.y + sub_offset + seg.oy,
+                    seg.w * clamp(item.reveal),
+                    seg.h,
+                ),
+                Qt.ClipOperation.IntersectClip,
+            )
             painter.drawImage(
                 QPointF(item.x + seg.ox, item.y + sub_offset + seg.oy), seg.image
             )
+            painter.restore()
+        painter.restore()
     painter.restore()
 
 

@@ -17,9 +17,9 @@
 | 工程管理 | `.kproj` JSON 工程文件的保存/加载，版本号兼容 (v1.1) |
 | 实时预览 | 预光栅化图层 + 共用 QPainter 合成；单调时钟跟音频纠漂，时间轴可 scrub |
 | 智能色彩提取 | K-Means 从封面提取主色/辅色（动画用）；歌词色按歌词区域局部对比度选取 |
-| 背景动画 | 静态模糊、渐变波浪（生成式）、波浪模糊（基于图片） |
-| 歌词动画 | 淡入淡出（单行高亮）、滚动列表（多行高亮+缓动滚动） |
-| 封面动画 | 静态展示（含倒影）、黑胶唱片旋转（含纹理+高光） |
+| 背景动画 | 静态模糊、渐变波浪（生成式）、波浪模糊（基于图片）、呼吸缩放 |
+| 歌词动画 | 淡入淡出（单行高亮）、滚动列表（多行高亮+缓动滚动）、滑入滑出、横向揭幕 |
+| 封面动画 | 静态展示（含倒影）、黑胶唱片旋转（含纹理+高光）、呼吸缩放、悬浮 |
 | 硬件加速 | NVIDIA NVENC / AMD AMF / Intel QSV，回退到软件编码 libx264 |
 
 ---
@@ -138,8 +138,8 @@ LRC Video Generator/
 │   │   ├── encoder.py       #   ffmpeg 编码器探测 + rawvideo 管道封装
 │   │   └── anims/
 │   │       ├── base.py      #   BaseLayer：prepare / eval / params_schema / 注册表
-│   │       ├── background.py#   静态模糊 / 渐变波浪 / 波浪模糊
-│   │       ├── lyrics.py    #   淡入淡出 / 滚动列表
+│   │       ├── background.py#   静态模糊 / 渐变波浪 / 波浪模糊 / 呼吸缩放
+│   │       ├── lyrics.py    #   淡入淡出 / 滚动列表 / 滑入滑出 / 横向揭幕
 │   │       └── cover.py     #   静态展示+倒影 / 黑胶唱片旋转
 │   ├── gui/                 # —— PySide6 界面 ——
 │   │   ├── main_window.py   #   主窗口与菜单
@@ -245,9 +245,9 @@ class BaseLayer(ABC):
 
 # 注册表：GUI 下拉框选项与 key 自动同步
 ANIM_REGISTRY: dict[str, dict[str, type[BaseLayer]]] = {
-    "background": {"static_blur": StaticBlurBG, "gradient_wave": GradientWaveBG, "wave_blur": WaveBlurBG},
-    "lyrics":     {"fade": FadeLyrics, "scroll_list": ScrollListLyrics},
-    "cover":      {"static": StaticCover, "disc_rotate": DiscRotate},
+    "background": {"static_blur": StaticBlurBG, "gradient_wave": GradientWaveBG, "wave_blur": WaveBlurBG, "breath_zoom": BreathZoomBG},
+    "lyrics":     {"fade": FadeLyrics, "scroll_list": ScrollListLyrics, "slide": SlideLyrics, "reveal": RevealLyrics},
+    "cover":      {"static": StaticCover, "disc_rotate": DiscRotate, "breath": BreathCover, "float": FloatCover},
 }
 ```
 
@@ -504,6 +504,22 @@ scale/filter 路径完成 BT.709 limited-range 转换。非 4 字节对齐行距
 }
 ```
 
+新增动画的 `.kproj` 配置示例（替换上方 `animations`）：
+
+```json
+{
+  "background": {"type": "breath_zoom", "params": {"period": 12.0, "amount": 0.08}},
+  "lyrics": {"type": "slide", "params": {"fade_ms": 400, "distance": 48.0}},
+  "cover": {"type": "breath", "params": {"period": 6.0, "amount": 0.05}}
+}
+```
+
+另外两种选择：歌词 `{"type": "reveal", "params": {"reveal_ms": 800}}`；
+封面 `{"type": "float", "params": {"period": 5.0, "distance": 18.0}}`。
+揭幕按行的时间触发，主歌词与译文分别从左向右显现，并非逐词高亮。
+背景缩放范围为 1 至 1+amount，居中裁切避免黑边；封面缩放范围为 1-amount 至 1。
+所有新动画复用 prepare 位图，eval 仅计算状态，共用 composite 完成裁切、缩放和位移。
+
 v1 `layout_preset` 仅实现 `landscape_mv`（封面左 / 歌词右）。schema 预留以便后续 `portrait_9_16` 等，避免再破格式。
 
 **版本兼容策略**：读取时按 `version` 字段逐级迁移。v1.0 若 `animations` 为字符串（如 `"cover": "disc_rotate"`），升为 `{type, params:{}}`。内存中始终表示为最新模型；保存一律写当前版本号。未知字段忽略不报错（向前兼容）。
@@ -540,9 +556,9 @@ v1 `layout_preset` 仅实现 `landscape_mv`（封面左 / 歌词右）。schema 
 
 | 参数 | 可选值 | 说明 |
 | ------ | -------- | ------ |
-| 背景动画 | 静态模糊 / 渐变波浪 / 波浪模糊 | 渐变波浪为纯数学生成，不依赖图片输入 |
-| 歌词动画 | 淡入淡出 / 滚动列表 | 淡入淡出为单行居中，滚动列表为多行滚动高亮 |
-| 封面动画 | 静态展示 / 唱片旋转 | 静态展示带柔和倒影，唱片旋转模拟黑胶唱片 |
+| 背景动画 | 静态模糊 / 渐变波浪 / 波浪模糊 / 呼吸缩放 | 渐变波浪为纯数学生成，不依赖图片输入 |
+| 歌词动画 | 淡入淡出 / 滚动列表 / 滑入滑出 / 横向揭幕 | 淡入淡出为单行居中，滚动列表为多行滚动高亮 |
+| 封面动画 | 静态展示 / 唱片旋转 / 呼吸缩放 / 悬浮 | 静态展示带柔和倒影，唱片旋转模拟黑胶唱片 |
 
 各 type 的数值参数由 `params_schema` 生成，写入 `animations.*.params`，不在 GUI 里写死。
 

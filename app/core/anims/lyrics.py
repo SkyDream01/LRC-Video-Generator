@@ -1,9 +1,9 @@
-"""歌词动画：淡入淡出（单行高亮）/ 滚动列表（多行高亮+缓动滚动）。"""
+"""歌词动画：淡入淡出 / 滚动列表 / 滑入滑出 / 横向揭幕。"""
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import ClassVar, cast
 
 from ..context import RenderContext, lyric_colors_of, sub_colors_of
@@ -26,6 +26,7 @@ class LyricItem:
     y: float
     opacity: float
     current: bool
+    reveal: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -198,3 +199,65 @@ def _ease_cubic(p: float) -> float:
 
 
 _EASINGS = {"linear": lambda p: p, "cubic": _ease_cubic}
+
+
+@register(KIND_LYRICS)
+class SlideLyrics(FadeLyrics):
+    """单行歌词从下方滑入，向上滑出，短行自动压缩过渡。"""
+
+    anim_type: ClassVar[str] = "slide"
+    label: ClassVar[str] = "滑入滑出"
+
+    @classmethod
+    def params_schema(cls) -> list[ParamSpec]:
+        return [
+            ParamSpec("fade_ms", "过渡时长 (ms)", "int", 400, 0, 2000),
+            ParamSpec("distance", "滑动距离 (px)", "float", 48.0, 0.0, 160.0),
+        ]
+
+    def eval(self, t: float, ctx: RenderContext) -> LyricsState:
+        state = super().eval(t, ctx)
+        if not state.items:
+            return state
+        start, end = ctx.intervals[state.current_index]
+        if t >= end:
+            return LyricsState()
+        seconds = min(self.params["fade_ms"] / 1000.0, (end - start) / 2.0)
+        enter = clamp((t - start) / seconds) if seconds > 0 else 1.0
+        leave = clamp((end - t) / seconds) if seconds > 0 else 1.0
+        offset = self.params["distance"] * ((1 - enter) ** 3 - (1 - leave) ** 3)
+        item = replace(
+            state.items[0], y=state.items[0].y + offset, opacity=min(enter, leave)
+        )
+        return LyricsState((item,), state.current_index)
+
+
+@register(KIND_LYRICS)
+class RevealLyrics(FadeLyrics):
+    """按行从左向右揭示主歌词与译文，不依赖词级时间。"""
+
+    anim_type: ClassVar[str] = "reveal"
+    label: ClassVar[str] = "横向揭幕"
+
+    @classmethod
+    def params_schema(cls) -> list[ParamSpec]:
+        return [ParamSpec("reveal_ms", "揭幕时长 (ms)", "int", 800, 0, 3000)]
+
+    def eval(self, t: float, ctx: RenderContext) -> LyricsState:
+        assets = cast(LyricsAssets, ctx.assets[KIND_LYRICS])
+        idx = current_index(assets.starts, t)
+        if idx < 0 or idx >= len(assets.lines) or t >= ctx.intervals[idx][1]:
+            return LyricsState()
+        start, end = ctx.intervals[idx]
+        seconds = min(self.params["reveal_ms"] / 1000.0, (end - start) / 2.0)
+        progress = clamp((t - start) / seconds) if seconds > 0 else 1.0
+        x, y, w, h = assets.rect
+        item = LyricItem(
+            idx,
+            x + w / 2,
+            y + (h - assets.lines[idx].height) / 2,
+            1.0,
+            True,
+            reveal=progress,
+        )
+        return LyricsState((item,), idx)

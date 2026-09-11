@@ -153,3 +153,43 @@ def test_qimage_rgb24_buffer_reuses_scratch_for_padded_rows():
             255,
         )
     )
+
+
+@pytest.mark.parametrize(
+    "kind,name",
+    [
+        ("background", "breath_zoom"),
+        ("cover", "breath"),
+        ("cover", "float"),
+        ("lyrics", "slide"),
+        ("lyrics", "reveal"),
+    ],
+)
+def test_new_effects_change_pixels_and_restore_painter(kind, name):
+    from PIL import Image
+
+    scene, _ = _make_scene(LYRC, {kind: name})
+    pixels = np.zeros((128, 128, 3), dtype=np.uint8)
+    pixels[:, :64] = (240, 80, 60)
+    pixels[:, 64:] = (40, 100, 220)
+    scene.ctx.cover = Image.fromarray(pixels)
+    scene.prepare()
+    gui = GuiAssets.from_context(scene.ctx)
+    a = scene.eval(1.05)
+    b = scene.eval(1.3)
+    # 只更换待测图层状态，隔离其他层的动画变化。
+    from dataclasses import replace
+
+    field = {"background": "bg", "cover": "cover", "lyrics": "lyrics"}[kind]
+    b = replace(a, **{field: getattr(b, field)})
+    assert _render(a, gui) != _render(b, gui)
+    assert _render(a, gui) == _render(a, gui)
+    img = QImage(960, 540, QImage.Format.Format_RGB888)
+    painter = QPainter(img)
+    painter.scale(0.5, 0.5)
+    transform = painter.transform()
+    composite(painter, a, gui)
+    assert painter.transform() == transform
+    assert painter.opacity() == 1
+    assert not painter.hasClipping()
+    painter.end()

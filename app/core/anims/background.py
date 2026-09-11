@@ -1,4 +1,4 @@
-"""背景动画：静态模糊 / 渐变波浪 / 波浪模糊。"""
+"""背景动画：静态模糊 / 渐变波浪 / 波浪模糊 / 呼吸缩放。"""
 
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ class BgState:
     x_offset: float = 0.0
     y_offset: float = 0.0
     alpha: float = 1.0
+    zoom: float = 1.0
 
 
 @dataclass
@@ -128,3 +129,22 @@ class WaveBlurBG(_BackgroundBase):
             2.0 * math.pi * t * speed / 5.0
         )
         return BgState(y_offset=y)
+
+
+@register(KIND_BACKGROUND)
+class BreathZoomBG(StaticBlurBG):
+    """居中裁切缓存背景，周期性缓慢推近与拉远。"""
+
+    anim_type: ClassVar[str] = "breath_zoom"
+    label: ClassVar[str] = "呼吸缩放"
+
+    @classmethod
+    def params_schema(cls) -> list[ParamSpec]:
+        return [
+            ParamSpec("period", "周期 (秒)", "float", 12.0, 2.0, 60.0),
+            ParamSpec("amount", "缩放幅度", "float", 0.08, 0.0, 0.3),
+        ]
+
+    def eval(self, t: float, ctx: RenderContext) -> BgState:
+        pulse = (1.0 - math.cos(2.0 * math.pi * t / self.params["period"])) / 2.0
+        return BgState(zoom=1.0 + self.params["amount"] * pulse)
