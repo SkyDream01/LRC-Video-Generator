@@ -425,3 +425,23 @@ def test_main_window_keyboard_home_end(qapp, tmp_path):
     win._jump(5.0)
     assert abs(win.audio.position_s() - 5.0) < 1e-6
     win.close()
+
+
+def test_custom_layout_controls(qapp):
+    from app.gui.panels.params_panel import ParamsPanel
+    panel = ParamsPanel()
+    project = KProj()
+    panel.bind(project)
+    changes = []
+    panel.paramsChanged.connect(lambda: changes.append(True))
+    panel._layout.setCurrentIndex(1)
+    panel._cover_x.setValue(-50)
+    panel._lyrics_x.setValue(40)
+    assert project.output.layout_preset == "landscape_mv_reversed"
+    assert project.output.cover_offset_x == -50
+    assert project.output.lyrics_offset_x == 40
+    assert len(changes) == 3
+    panel.bind(project)
+    assert len(changes) == 3
+    assert panel._cover_x.value() == -50
+    panel.close()

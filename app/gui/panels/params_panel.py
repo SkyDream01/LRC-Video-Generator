@@ -148,6 +148,9 @@ class ParamsPanel(QWidget):
         self._palette_status.setWordWrap(True)
         self._palette_status.setTextFormat(Qt.TextFormat.RichText)
 
+        self._layout = QComboBox(self)
+        self._cover_x = QSpinBox(self)
+        self._lyrics_x = QSpinBox(self)
         self._fps = QComboBox(self)
         self._encoder = QComboBox(self)
         self._vbitrate = QComboBox(self)
@@ -271,6 +274,15 @@ class ParamsPanel(QWidget):
             self._vbitrate.addItem(preset)
         for preset in _AUDIO_BITRATE_PRESETS:
             self._abitrate.addItem(preset)
+        self._layout.addItem("封面左 · 歌词右", "landscape_mv")
+        self._layout.addItem("歌词左 · 封面右", "landscape_mv_reversed")
+        form.addRow("左右布局", self._layout)
+        for label, control in (("封面水平偏移", self._cover_x), ("歌词水平偏移", self._lyrics_x)):
+            control.setRange(-1920, 1920)
+            control.setSingleStep(10)
+            control.setSuffix(" px")
+            control.setToolTip("负数向左，正数向右；超出画布时停在边缘。")
+            form.addRow(label, control)
         form.addRow("帧率", self._fps)
         form.addRow("编码器", self._encoder)
         form.addRow("视频码率", self._vbitrate)
@@ -295,6 +307,9 @@ class ParamsPanel(QWidget):
         self._color_secondary.colorChanged.connect(self._on_color_changed)
         self._color_stroke2.colorChanged.connect(self._on_color_changed)
 
+        self._layout.currentIndexChanged.connect(self._on_output_changed)
+        self._cover_x.valueChanged.connect(self._on_output_changed)
+        self._lyrics_x.valueChanged.connect(self._on_output_changed)
         self._fps.currentIndexChanged.connect(self._on_output_changed)
         self._encoder.currentIndexChanged.connect(self._on_output_changed)
         self._vbitrate.editTextChanged.connect(self._on_output_changed)
@@ -348,6 +363,9 @@ class ParamsPanel(QWidget):
         ab = self._abitrate.currentText().strip()
         if ab:
             p.output.audio_bitrate = ab
+        p.output.layout_preset = self._layout.currentData()
+        p.output.cover_offset_x = self._cover_x.value()
+        p.output.lyrics_offset_x = self._lyrics_x.value()
         p.output.show_metadata = self._show_meta.isChecked()
         self.paramsChanged.emit()
 
@@ -489,6 +507,9 @@ class ParamsPanel(QWidget):
             self._color_primary,
             self._color_secondary,
             self._color_stroke2,
+            self._layout,
+            self._cover_x,
+            self._lyrics_x,
             self._fps,
             self._encoder,
             self._vbitrate,
@@ -513,6 +534,9 @@ class ParamsPanel(QWidget):
             self._color_secondary.set_color(project.colors.secondary)
             self._color_stroke2.set_color(project.colors.stroke)
 
+            self._layout.setCurrentIndex(max(0, self._layout.findData(project.output.layout_preset)))
+            self._cover_x.setValue(project.output.cover_offset_x)
+            self._lyrics_x.setValue(project.output.lyrics_offset_x)
             self._fps.setCurrentIndex(max(0, self._fps.findData(project.output.fps)))
             self._encoder.setCurrentIndex(
                 max(0, self._encoder.findData(project.output.encoder))

@@ -84,6 +84,8 @@ class OutputSpec:
     width: int = 1920
     height: int = 1080
     layout_preset: str = "landscape_mv"
+    cover_offset_x: int = 0
+    lyrics_offset_x: int = 0
     encoder: str = "auto"
     video_bitrate: str = "12M"
     audio_bitrate: str = "320k"
@@ -229,6 +231,8 @@ def kproj_from_dict(data: dict) -> KProj:
         layout_preset=_string(
             output_raw.get("layout_preset"), output_default.layout_preset
         ),
+        cover_offset_x=min(1920, _int(output_raw.get("cover_offset_x"), 0, -1920)),
+        lyrics_offset_x=min(1920, _int(output_raw.get("lyrics_offset_x"), 0, -1920)),
         encoder=_string(output_raw.get("encoder"), output_default.encoder),
         video_bitrate=_string(
             output_raw.get("video_bitrate"), output_default.video_bitrate

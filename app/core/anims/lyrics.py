@@ -334,7 +334,8 @@ class ArcLyrics(FadeLyrics):
         focus = max(0, idx-1+_ease_cubic(progress))
         x, y, w, h = ctx.layout.cover_rect
         cx, cy = x+w/2, y+h/2
-        radius = assets.rect[0]-cx+12
+        direction = 1 if assets.rect[0] + assets.rect[2]/2 >= cx else -1
+        radius = abs(assets.rect[0]-cx+12)
         half = self.params["lines"]/2
         items = []
         for i in range(max(0, math.floor(focus-half)), min(len(assets.lines), math.ceil(focus+half)+1)):
@@ -346,7 +347,7 @@ class ArcLyrics(FadeLyrics):
             rad = math.radians(angle)
             scale = .48+.52*math.exp(-distance*distance*2)
             alpha = (.20+.80*math.exp(-distance*distance*2))*_smooth(clamp(half-distance))
-            items.append(LyricItem(i, cx+radius*math.cos(rad),
+            items.append(LyricItem(i, assets.rect[0]+12+direction*radius*(math.cos(rad)-1),
                 cy+radius*math.sin(rad)-assets.lines[i].height*scale/2,
                 alpha, i==idx, angle=angle*.45, scale=scale, left_align=True))
         return LyricsState(tuple(items), idx)

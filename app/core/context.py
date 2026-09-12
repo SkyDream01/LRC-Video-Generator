@@ -53,17 +53,22 @@ class LayoutRects:
 
 
 def compute_layout(
-    width: int, height: int, preset: str = "landscape_mv"
+    width: int, height: int, preset: str = "landscape_mv",
+    cover_offset_x: int = 0, lyrics_offset_x: int = 0,
 ) -> LayoutRects:
-    """v1 仅实现 landscape_mv（封面左 / 歌词右）。"""
-    if preset != "landscape_mv":
-        preset = "landscape_mv"
+    """计算左右布局和独立水平偏移，静态区域限制在画布内。"""
     margin = 64
     cover = max(360, min(720, height - 2 * margin))
     cover_x = 96
     cover_y = (height - cover) // 2
     lyrics_x = cover_x + cover + 64
-    lyrics_rect = (lyrics_x, cover_y, max(200, width - margin - lyrics_x), cover)
+    lyrics_width = max(200, width - margin - lyrics_x)
+    if preset == "landscape_mv_reversed":
+        cover_x = width - cover_x - cover
+        lyrics_x = width - lyrics_x - lyrics_width
+    cover_x = max(0, min(width - cover, cover_x + cover_offset_x))
+    lyrics_x = max(0, min(width - lyrics_width, lyrics_x + lyrics_offset_x))
+    lyrics_rect = (lyrics_x, cover_y, lyrics_width, cover)
     return LayoutRects(
         canvas=(width, height),
         cover_rect=(cover_x, cover_y, cover, cover),
@@ -176,7 +181,8 @@ def build_context(
     intervals = line_intervals(lyrics, duration if duration > 0 else None)
 
     layout = compute_layout(
-        project.output.width, project.output.height, project.output.layout_preset
+        project.output.width, project.output.height, project.output.layout_preset,
+        project.output.cover_offset_x, project.output.lyrics_offset_x,
     )
 
     # 取色：自动 → K-Means；手动 → 用户配置
