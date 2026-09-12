@@ -2,6 +2,7 @@
 
 from typing import cast
 
+import pytest
 import numpy as np
 from PIL import Image
 
@@ -136,3 +137,41 @@ def test_font_cache_fallback(monkeypatch, tmp_path):
     assert font is not None
     # 同 key 命中缓存
     assert cache.get(None, 32) is font
+
+
+@pytest.mark.parametrize("auto_extract", [True, False])
+@pytest.mark.parametrize("background", ["#FFFFFF", "#101014"])
+@pytest.mark.parametrize("main,sub,stroke", [
+    ("#FFFFFF", "#C8C8C8", "#101014"),
+    ("#FF0000", "#00FF00", "#101014"),
+    ("#FFFFFF", "#0000FF", "#FF00FF"),
+])
+def test_selected_lyric_colors_survive_background_and_auto_extract(
+    tmp_path, auto_extract, background, main, sub, stroke
+):
+    from app.core.color import hex_to_rgb
+    from app.core.context import sub_colors_of
+
+    Image.new("RGB", (64, 64), background).save(tmp_path / "cover.png")
+    project = KProj()
+    project.files.cover = "cover.png"
+    project.colors.auto_extract = auto_extract
+    project.lyric_style.main_color = main
+    project.lyric_style.sub_color = sub
+    project.lyric_style.stroke_color = stroke
+    ctx = build_context(
+        project, tmp_path,
+        lrc_text="[00:01.00]Hello\n[00:01.00]World",
+        duration_override=5.0,
+    )
+    assert lyric_colors_of(ctx) == (hex_to_rgb(main), hex_to_rgb(stroke))
+    assert sub_colors_of(ctx) == (hex_to_rgb(sub), hex_to_rgb(stroke))
+    assert ctx.project.lyric_style == project.lyric_style
+    assert ctx.project.lyric_style is not project.lyric_style
+    assets = cast(LyricsAssets, FadeLyrics({}).prepare(ctx))
+    for segments, fill in [(assets.lines[0].main, main), (assets.lines[0].sub, sub)]:
+        assert segments
+        pixels = segments[0].pixels
+        for color in (fill, stroke):
+            expected = (*hex_to_rgb(color), 255)
+            assert np.any(np.all(pixels == expected, axis=-1))

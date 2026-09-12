@@ -258,7 +258,7 @@ def _draw_cover(painter: QPainter, state: SceneState, assets: GuiAssets) -> None
 
     painter.save()
     _perspective(painter, cx, cy, state.cover.tilt_x, state.cover.tilt_y, max(w, h) * 2.5)
-    if assets.cover_disc and state.cover.angle != 0.0:
+    if state.cover.angle != 0.0:
         painter.translate(cx, cy)
         painter.rotate(state.cover.angle)
         painter.drawImage(

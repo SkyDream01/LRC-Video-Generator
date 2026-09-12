@@ -16,14 +16,11 @@ from .color import (
     extract_palette,
     hex_to_rgb,
     palette_from_manual,
-    pick_lyric_colors,
 )
 from .encoder import audio_duration, read_audio_meta
 from .lrc import LrcDocument, LyricLine, parse_lrc
 from .prepare import FontCache, cover_fill_resize
 from .project import (
-    DEFAULT_MAIN_COLOR,
-    DEFAULT_STROKE_COLOR,
     KProj,
     resolve_media,
 )
@@ -133,32 +130,6 @@ def _load_lrc_doc(lrc_path: Path | None, lrc_text: str | None) -> LrcDocument:
     return parse_lrc(text) if text else LrcDocument()
 
 
-def _resolve_lyric_style(project: KProj, sample: Image.Image | None):
-    """歌词配色：用户显式改过颜色则尊重；仍为默认值且开启自动取色时按区域对比度选取。"""
-    style = project.lyric_style
-    if not project.colors.auto_extract:
-        return style
-
-    # 主歌词色与描边色分别判断。用户只手动改了其中一个时，另一个仍可
-    # 随封面自动适配，不会被自动取色悄悄覆盖。
-    updates = {}
-    if isinstance(style.main_color, str) and style.main_color.upper() == DEFAULT_MAIN_COLOR:
-        text_color, stroke_color = pick_lyric_colors(sample)
-        updates["main_color"] = "#{:02X}{:02X}{:02X}".format(*text_color)
-        if (
-            isinstance(style.stroke_color, str)
-            and style.stroke_color.upper() == DEFAULT_STROKE_COLOR
-        ):
-            updates["stroke_color"] = "#{:02X}{:02X}{:02X}".format(*stroke_color)
-    elif (
-        isinstance(style.stroke_color, str)
-        and style.stroke_color.upper() == DEFAULT_STROKE_COLOR
-    ):
-        _text_color, stroke_color = pick_lyric_colors(sample)
-        updates["stroke_color"] = "#{:02X}{:02X}{:02X}".format(*stroke_color)
-    return replace(style, **updates) if updates else style
-
-
 def build_context(
     project: KProj,
     base_dir: str | Path,
@@ -214,25 +185,10 @@ def build_context(
     else:
         palette = palette_from_manual(project.colors.primary, project.colors.secondary)
 
-    # 歌词对比度选色只采样歌词区域对应的背景，而不是整张封面/背景图的
-    # 平均色。这样右侧亮色区域不会被左侧深色封面稀释。
-    color_source = bg_img if bg_img is not None else cover_img
-    color_sample = (
-        bg_sample_bitmap(
-            color_source,
-            layout.canvas[0],
-            layout.canvas[1],
-            rect=layout.lyrics_rect,
-        )
-        if color_source is not None
-        else None
-    )
-    style = _resolve_lyric_style(project, color_sample)
-
     fonts = FontCache(Path(font_dir) if font_dir else APP_ROOT / "font")
 
     return RenderContext(
-        project=replace(project, lyric_style=style),
+        project=replace(project, lyric_style=replace(project.lyric_style)),
         layout=layout,
         palette=palette,
         lyrics=lyrics,

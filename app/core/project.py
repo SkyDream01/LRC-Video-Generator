@@ -15,7 +15,7 @@ from pathlib import Path
 KPROJ_VERSION = "1.1"
 CURRENT_VERSION = KPROJ_VERSION
 
-# 歌词默认色（context 检测「用户未改过」时用于自动对比度选色）
+# 歌词默认色，与用户选择的其他颜色一样按原值渲染
 DEFAULT_MAIN_COLOR = "#FFFFFF"
 DEFAULT_STROKE_COLOR = "#101014"
 

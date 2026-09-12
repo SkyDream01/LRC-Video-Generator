@@ -130,6 +130,37 @@ def test_disc_rotation_changes_cover_area():
     )
 
 
+@pytest.mark.parametrize("rpm", [0.6, -0.6, 0.0])
+def test_celestial_album_rotates_with_ornament(rpm):
+    from PIL import Image
+
+    scene, _ = _make_scene("", {"cover": "celestial"})
+    scene.ctx.cover = Image.new("RGB", (256, 256), (220, 30, 30))
+    scene.ctx.cover.paste((30, 60, 220), (128, 0, 256, 256))
+    scene.ctx.project.animations.cover.params["rpm"] = rpm
+    scene = Scene(scene.ctx)
+    scene.prepare()
+    gui = GuiAssets.from_context(scene.ctx)
+    before = qimage_to_rgb_array(_render(scene.eval(0.0), gui))
+    after = qimage_to_rgb_array(_render(scene.eval(25.0), gui))
+    x, y, w, h = gui.cover_rect
+    cx, cy = round(x + w / 2), round(y + h / 2)
+    offset = round(w * 0.15)
+    # 在专辑内部采样，避免将外圈装饰的转动误判为图片转动。
+    assert before[cy, cx - offset, 0] > 180
+    if rpm > 0:
+        assert after[cy + offset, cx - offset, 2] > 180
+        assert after[cy - offset, cx + offset, 0] > 180
+    elif rpm < 0:
+        assert after[cy + offset, cx + offset, 0] > 180
+        assert after[cy - offset, cx - offset, 2] > 180
+    else:
+        np.testing.assert_array_equal(
+            before[cy-offset:cy+offset, cx-offset:cx+offset],
+            after[cy-offset:cy+offset, cx-offset:cx+offset],
+        )
+
+
 def test_numpy_to_qimage_roundtrip_alpha():
     from app.gui.composite import numpy_to_qimage
 
