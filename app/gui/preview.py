@@ -17,6 +17,7 @@ from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import QWidget
 
 from .composite import composite
+from .theme import COLORS
 
 if TYPE_CHECKING:
     from PySide6.QtGui import QImage, QPaintEvent
@@ -26,10 +27,10 @@ if TYPE_CHECKING:
 CANVAS_W = 1920
 CANVAS_H = 1080
 
-_BG = QColor("#0a0f16")
-_HINT = QColor("#8998aa")
-_ACCENT = QColor("#64dbc4")
-_FRAME = QColor(255, 255, 255, 20)
+_BG = QColor(COLORS["surface"])
+_HINT = QColor(COLORS["on_surface_variant"])
+_ACCENT = QColor(COLORS["on_primary_container"])
+_FRAME = QColor(COLORS["outline_variant"])
 
 
 class PreviewSurface(QWidget):
@@ -148,7 +149,7 @@ class PreviewSurface(QWidget):
         h = fm.height() + 10
         rect = QRectF(self.width() - w - 12, 12, w, h)
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(0, 0, 0, 140))
+        p.setBrush(QColor(COLORS["primary_container"]))
         p.drawRoundedRect(rect, 6, 6)
         p.setPen(_ACCENT)
         p.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)

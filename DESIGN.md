@@ -638,3 +638,11 @@ core 测试不依赖 Qt。composite 金帧单独标记，FreeType/Qt 版本差�
 输出面板提供「左右布局」（封面左 / 歌词右，或歌词左 / 封面右），以及封面、歌词各自的水平偏移（逻辑像素，负数左移、正数右移）。偏移后的静态区域限制在画布内，允许用户自行安排重叠。布局统一由 core 的 compute_layout 计算，预览与导出共用。
 
 `.kproj` 的 `output` 增加 `cover_offset_x: 0`、`lyrics_offset_x: 0`；`layout_preset` 支持 `landscape_mv_reversed`，默认仍为 `landscape_mv`。旧工程缺失偏移字段时取 0。
+
+
+## 10. GUI 视觉规范（Material Design 3）
+
+- 使用 MD3 深色主题：surface `#141218`、surface container `#211F26`、primary `#D0BCFF`、primary container `#4F378B`、on surface `#E6E0E9`。颜色角色集中于 `app/gui/theme.py`，自绘预览外框、时间轴也使用同一组 token。
+- 中文系统无衬线字体，面板标题 22pt、正文 10pt、说明 9pt；圆角面板 24px、卡片 16px、输入框 8px、操作按钮 20px。导出与播放使用主色填充，辅助操作使用 tonal / outlined 层级。
+- 三栏为素材、实时预览、参数；素材区与各参数标签页独立滚动，最小窗口 1000×640。菜单、提示、进度、禁用、悬停与键盘焦点采用统一主题。系统文件选择器保留操作系统原生外观。
+- 主题仅改变编辑器界面；视频内容继续由项目参数与共用 composite 决定。

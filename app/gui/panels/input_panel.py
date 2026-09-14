@@ -51,13 +51,14 @@ class InputPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("inputPanel")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._edits: dict[str, QLineEdit] = {}
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(14, 14, 14, 14)
+        root.setContentsMargins(16, 20, 16, 16)
         root.setSpacing(11)
 
-        eyebrow = QLabel("PROJECT  /  MEDIA", self)
+        eyebrow = QLabel("歌词视频工程", self)
         eyebrow.setObjectName("panelEyebrow")
         title = QLabel("素材", self)
         title.setObjectName("panelTitle")
@@ -71,7 +72,8 @@ class InputPanel(QWidget):
         files_box = QGroupBox("媒体素材", self)
         files_box.setObjectName("mediaFilesBox")
         files_form = QFormLayout(files_box)
-        files_form.setSpacing(6)
+        files_form.setSpacing(8)
+        files_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
         files_form.setLabelAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
@@ -89,7 +91,7 @@ class InputPanel(QWidget):
             row_layout.addWidget(edit, 1)
             row_layout.addWidget(browse)
             if key == "background":
-                clear = QPushButton("✕", files_box)
+                clear = QPushButton("×", files_box)
                 clear.setObjectName("clearButton")
                 clear.setFixedWidth(28)
                 clear.setToolTip("清除背景图片")
@@ -112,7 +114,7 @@ class InputPanel(QWidget):
         info_box = QGroupBox("媒体信息", self)
         info_box.setObjectName("mediaInfoBox")
         info_form = QFormLayout(info_box)
-        info_form.setSpacing(4)
+        info_form.setSpacing(8)
         info_form.setLabelAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )

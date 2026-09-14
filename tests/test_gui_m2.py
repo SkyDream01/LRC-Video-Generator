@@ -363,9 +363,11 @@ def test_timeline_time_label_and_playing_state(qapp):
     bar.set_time(30.0)
     assert bar.duration == pytest.approx(90.0)
     bar.set_playing(True)
-    assert bar._btn.text() == "❚❚"
+    assert bar._btn.accessibleName() == "暂停"
+    assert not bar._btn.icon().isNull()
     bar.set_playing(False)
-    assert bar._btn.text() == "▶"
+    assert bar._btn.accessibleName() == "播放"
+    assert not bar._btn.icon().isNull()
 
 
 # ---------------------------------------------------------------- 主窗口冒烟

@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSpinBox,
+    QScrollArea,
     QSplitter,
     QTextEdit,
     QVBoxLayout,
@@ -86,7 +87,11 @@ class MainWindow(QMainWindow):
         self.timeline = TimelineBar()
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(self.input_panel)
+        input_scroll = QScrollArea()
+        input_scroll.setWidgetResizable(True)
+        input_scroll.setMinimumWidth(240)
+        input_scroll.setWidget(self.input_panel)
+        splitter.addWidget(input_scroll)
         splitter.addWidget(self.preview)
         splitter.addWidget(self.params_panel)
         splitter.setCollapsible(0, False)
@@ -95,17 +100,14 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setStretchFactor(2, 0)
-        splitter.setSizes([260, 640, 300])
+        splitter.setSizes([280, 620, 340])
 
         center = QWidget()
         center.setObjectName("workspace")
         vbox = QVBoxLayout()
-        vbox.setContentsMargins(0, 0, 0, 0)
-        vbox.setSpacing(0)
+        vbox.setContentsMargins(12, 4, 12, 4)
+        vbox.setSpacing(12)
         vbox.addWidget(splitter, 1)
-        line = QFrame()
-        line.setFrameShape(QFrame.Shape.HLine)
-        vbox.addWidget(line)
         vbox.addWidget(self.timeline)
         layout = QHBoxLayout(center)
         layout.setContentsMargins(0, 0, 0, 0)

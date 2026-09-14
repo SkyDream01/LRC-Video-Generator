@@ -13,17 +13,19 @@ from PySide6.QtWidgets import (
     QLabel,
     QSizePolicy,
     QToolButton,
+    QStyle,
     QWidget,
 )
 
 from .timefmt import format_time
+from .theme import COLORS
 
-_BG_GROOVE = QColor("#0f1722")
-_FILL = QColor("#43576d")
-_PLAYED = QColor("#f1b86b")
-_TICK = QColor("#496078")
-_TICK_TEXT = QColor("#8798aa")
-_HEAD = QColor("#ffffff")
+_BG_GROOVE = QColor(COLORS["secondary_container"])
+_FILL = QColor(COLORS["outline"])
+_PLAYED = QColor(COLORS["primary"])
+_TICK = QColor(COLORS["outline_variant"])
+_TICK_TEXT = QColor(COLORS["on_surface_variant"])
+_HEAD = QColor(COLORS["primary"])
 
 
 class _Ruler(QWidget):
@@ -219,7 +221,7 @@ class _Ruler(QWidget):
         p.drawRoundedRect(QRectF(head_x - 1, groove_y, 2, groove_h), 1, 1)
 
         if self._hover_x >= m and self._duration > 0 and not self._scrubbing:
-            p.setBrush(QColor(255, 255, 255, 60))
+            p.setBrush(QColor(COLORS["outline"]))
             p.drawRoundedRect(
                 QRectF(self._hover_x - 1, groove_y, 2, groove_h), 1, 1
             )
@@ -239,13 +241,15 @@ class TimelineBar(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("timelineBar")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._playing = False
 
         self._btn = QToolButton(self)
         self._btn.setObjectName("playButton")
-        self._btn.setText("▶")
+        self._btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+        self._btn.setAccessibleName("播放")
         self._btn.setCheckable(False)
-        self._btn.setFixedSize(36, 36)
+        self._btn.setFixedSize(48, 48)
         self._btn.setToolTip("播放 / 暂停（空格）")
         self._btn.clicked.connect(self.playToggled)
 
@@ -259,7 +263,7 @@ class TimelineBar(QWidget):
         mono = self._label.font()
         mono.setPointSize(9)
         self._label.setFont(mono)
-        self._label.setFixedWidth(150)
+        self._label.setFixedWidth(176)
         self._label.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
@@ -291,7 +295,10 @@ class TimelineBar(QWidget):
 
     def set_playing(self, playing: bool) -> None:
         self._playing = playing
-        self._btn.setText("❚❚" if playing else "▶")
+        self._btn.setIcon(self.style().standardIcon(
+            QStyle.StandardPixmap.SP_MediaPause if playing else QStyle.StandardPixmap.SP_MediaPlay
+        ))
+        self._btn.setAccessibleName("暂停" if playing else "播放")
 
     @property
     def is_scrubbing(self) -> bool:

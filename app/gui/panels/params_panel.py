@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QSpinBox,
+    QScrollArea,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -92,7 +93,7 @@ class ColorButton(QPushButton):
         self.setText(self._color)
         self.setStyleSheet(
             f"QPushButton {{ background-color: {self._color}; color: {fg};"
-            f" border: 1px solid rgba(255,255,255,0.25); border-radius: 7px;"
+            f" border: 1px solid rgba(121,116,126,0.6); border-radius: 16px;"
             f" min-height: 22px; padding: 4px 8px; }}"
         )
 
@@ -124,6 +125,7 @@ class ParamsPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("paramsPanel")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._project: KProj | None = None
         self._fonts = FontCache(APP_ROOT / "font")
 
@@ -172,18 +174,29 @@ class ParamsPanel(QWidget):
         restore.clicked.connect(self.restoreDefaultsRequested)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(14, 14, 14, 14)
+        root.setContentsMargins(16, 20, 16, 16)
         root.setSpacing(11)
 
-        eyebrow = QLabel("CONTROL  /  LOOK & FEEL", self)
+        eyebrow = QLabel("画面与输出", self)
         eyebrow.setObjectName("panelEyebrow")
         title = QLabel("参数", self)
         title.setObjectName("panelTitle")
         subtitle = QLabel("微调歌词、动画、色彩和成片规格。", self)
         subtitle.setObjectName("panelSubtitle")
+        subtitle.setWordWrap(True)
         root.addWidget(eyebrow)
         root.addWidget(title)
         root.addWidget(subtitle)
+        for index in range(tabs.count()):
+            page = tabs.widget(index)
+            label = tabs.tabText(index)
+            tabs.removeTab(index)
+            scroll = QScrollArea(tabs)
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+            scroll.setWidget(page)
+            tabs.insertTab(index, scroll, label)
+        tabs.setCurrentIndex(0)
         root.addWidget(tabs, 1)
         root.addWidget(restore)
 
@@ -194,7 +207,8 @@ class ParamsPanel(QWidget):
     def _build_style_tab(self) -> QWidget:
         w = QWidget(self)
         form = QFormLayout(w)
-        form.setSpacing(6)
+        form.setSpacing(10)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         form.setLabelAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
@@ -247,7 +261,8 @@ class ParamsPanel(QWidget):
     def _build_color_tab(self) -> QWidget:
         w = QWidget(self)
         form = QFormLayout(w)
-        form.setSpacing(6)
+        form.setSpacing(10)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         form.setLabelAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
@@ -261,7 +276,8 @@ class ParamsPanel(QWidget):
     def _build_output_tab(self) -> QWidget:
         w = QWidget(self)
         form = QFormLayout(w)
-        form.setSpacing(6)
+        form.setSpacing(10)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         form.setLabelAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
