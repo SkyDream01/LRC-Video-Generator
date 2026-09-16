@@ -137,6 +137,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
+    if not argv and getattr(sys, "frozen", False):
+        argv = ["gui"]
+    # windowed 构建没有标准流；命令行导出请使用独立 CLI 程序。
+    if getattr(sys, "frozen", False) and sys.stdout is None:
+        argv = ["gui"]
     parser = build_parser()
     args = parser.parse_args(argv)
     return args.func(args)

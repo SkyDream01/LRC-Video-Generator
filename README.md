@@ -157,6 +157,85 @@ LRC Video Generator/
 └── AGENTS.md
 ```
 
+## Windows 绿色版构建与验证
+
+### 构建环境和外部文件
+
+在 Windows x64 上安装 **CPython 3.13.15 x64**，使用专用虚拟环境。源码运行仍支持 Python ≥ 3.10；发布构建另用 `requirements-build.txt` 固定运行库、Qt、PyInstaller 和传递依赖版本，脚本会检查版本是否一致。
+
+构建前按需放入以下文件（不会自动下载）：
+
+- `ffmpeg/ffmpeg.exe`：完整离线导出需要，须支持 H.264/libx264 和 AAC。
+- `ffmpeg/ffprobe.exe`：建议与 FFmpeg 来自同一发行版本；缺省时应用回退到 mutagen。
+- `font/*.ttf`、`font/*.otf`：建议提供覆盖中文的字体。未提供时使用系统字体，跨机器的文字外观可能不同。
+- `resources/`：目前仓库没有此目录；以后加入的资源会按原有相对路径自动包含。
+
+建议提供自包含的 Windows x64 FFmpeg 工具；若使用依赖 DLL 的发行包，需要把它所需的 DLL 一起放进 `ffmpeg/`。该目录会原样分发，可同时放入发行包的许可证说明；发布者需确认 FFmpeg 和字体的再分发许可。Qt 的多媒体 DLL/插件由 PyInstaller 官方 hooks 收集，它们不能替代导出所用的外部 `ffmpeg.exe`。
+
+在项目根目录运行 PowerShell：
+
+```powershell
+py -3.13 -m venv .venv-build
+.\.venv-build\Scripts\python.exe -m pip install -r requirements-build.txt
+.\.venv-build\Scripts\python.exe build.py
+```
+
+`py -3.13` 必须指向上述补丁版本；版本不符时脚本会停止。脚本从自身路径定位项目，故也可在其他工作目录通过绝对路径调用。打包子进程会收窄 PATH 到 Python 和 Windows 系统目录，避免误收集其他软件的同名 DLL。重新构建会替换 `dist/LRCVideoMaker/`，不要把个人工程或媒体放在此构建输出目录。
+
+产物为 `dist/LRCVideoMaker/`，应复制或压缩**整个目录**，不能只取 EXE：
+
+```text
+LRCVideoMaker/
+├── LRCVideoMaker.exe
+├── LRCVideoMaker-CLI.exe    # 控制台版，支持 demo/export/--help
+├── assets/                 # logo.png 和多尺寸 logo.ico
+├── font/
+├── ffmpeg/                 # 有提供时包含外部工具；否则为空占位目录
+├── resources/              # 有提供时包含
+├── docs/、examples/、README.md、LICENSE
+├── build-manifest.json     # Python、依赖版本和所有产物的 SHA-256（不含清单自身）
+└── Python/Qt/扩展模块和依赖 DLL 等运行文件
+```
+
+`app` 作为 Python 模块归档收集，不需要旁置源码。使用 `contents_directory="."` 的平铺 onedir 布局，让现有基于 `__file__` 的资源路径仍指向 EXE 所在目录，避免依赖当前工作目录；此选项见 [PyInstaller 官方说明](https://www.pyinstaller.org/en/stable/usage.html)。禁用 UPX，不生成单文件自解压程序。
+
+双击 `LRCVideoMaker.exe` 打开 GUI，无控制台窗口；`LRCVideoMaker-CLI.exe` 提供 `demo`、`export` 和诊断输出。两个入口共享同一份依赖和资源。程序及窗口使用 `assets/logo.ico`；logo 设计与来源见 [assets/README.md](assets/README.md)。用户不需要安装 Python。没有随包 FFmpeg 时仍可打开 GUI；导出会继续尝试系统 PATH。
+
+构建还会生成 `dist/LRCVideoMaker-Portable.zip`，可直接分发。保留 PyInstaller onedir 实现（符合 DESIGN.md），没有引入参考脚本中本项目不使用的 Nuitka、pykakasi 或 styles.qss。
+
+需要参考方案中的自解压 EXE 时，安装 [7-Zip](https://www.7-zip.org/) 并运行：
+
+```powershell
+.\.venv-build\Scripts\python.exe build.py --sfx --seven-zip 'C:\Program Files\7-Zip\7z.exe'
+```
+
+默认使用同目录的 `7z.sfx`，生成 `dist/LRCVideoMaker-Portable.exe`，让用户选择解压目录后手动启动程序。若明确需要临时解压并自动运行，可追加 `--sfx-module 'C:\Tools\7zSD.sfx'`（或 `7zS.sfx`）；该模式退出后临时文件会被清理，工程和导出应存到其他目录。普通 `7z.sfx` 不拼接 `RunProgram` 配置。7-Zip 工具及 SFX 模块须由构建者自行提供，不入库；缺失时在构建前报错。SFX 使用独立临时归档并验证完整性，失败返回非零退出码，不会把旧归档内容混入新包。
+
+这里的“可复现”指固定环境、相同源码与外部资源可重复构建相同功能的目录包，不承诺 EXE 逐字节相同。请保存源码提交号、`requirements-build.txt`、外部工具/字体及 `build-manifest.json`；更换外部文件或 Windows 系统字体会影响结果。仓库只提交配置、脚本和说明，`build/`、`dist/`、虚拟环境、日志、用户字体和 `ffmpeg/` 下的外部文件均已忽略。
+
+### 验证绿色版
+
+1. 把整个产物复制到另一个含中文和空格的可写路径，例如 `C:\Temp\歌词 视频\LRCVideoMaker`；最好在未安装 Python、PATH 中没有 FFmpeg 的 Windows x64 测试机验证。
+2. 从不同工作目录运行以下命令，确认 CLI 模块及离屏 Qt 渲染正常。短片强制软件编码，避免依赖显卡：
+
+```powershell
+$bundle = 'C:\Temp\歌词 视频\LRCVideoMaker'
+Set-Location $env:TEMP
+& "$bundle\LRCVideoMaker-CLI.exe" --help
+& "$bundle\ffmpeg\ffmpeg.exe" -version
+& "$bundle\ffmpeg\ffprobe.exe" -version
+& "$bundle\LRCVideoMaker-CLI.exe" demo --dir "$env:TEMP\lvm-smoke" --frames 60 --encoder libx264
+if ($LASTEXITCODE -ne 0) { throw '绿色版导出失败' }
+& "$bundle\ffmpeg\ffprobe.exe" -v error -select_streams v:0 -show_entries stream=width,height,r_frame_rate,nb_frames,color_space,color_transfer,color_primaries,color_range -of json "$env:TEMP\lvm-smoke\demo.mp4"
+```
+
+预期视频为 1920×1080、60/1 fps、60 帧，颜色为 BT.709 / tv。FFmpeg 未随包时跳过版本和导出检查，或先人工补齐工具；不要把只能通过 `--help` 当作完整导出验收。
+
+3. 双击 EXE，确认 GUI、字体选择、中文歌词、播放声音、预览、打开/保存工程、导出正常；检查字体目录能识别随包字体。搬移已有 `.kproj` 时，其引用的媒体也必须按工程相对路径一起搬移。
+4. 在 PATH 不含 FFmpeg 的环境临时移走随包 `ffmpeg/` 后重新启动，确认界面仍可用并提示缺少 FFmpeg、不能导出；验证后恢复目录。
+
+源码检查可在开发环境运行 `python -m pytest -q`；构建日志中的缺失模块警告需结合实际导入及上述运行验证判断。`build-manifest.json` 的 SHA-256 可用于检查复制后的文件是否完整。
+
 ## 开发检查
 
 ```bash

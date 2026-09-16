@@ -10,6 +10,7 @@ venv/
 build/
 dist/
 *.spec
+!LRCVideoMaker.spec
 
 # 运行产物
 *.kproj.bak
@@ -18,6 +19,13 @@ output/
 # 外部二进制不入库（可手动放置）
 ffmpeg/ffmpeg.exe
 ffmpeg/ffprobe.exe
+ffmpeg/*
+!ffmpeg/.gitkeep
+.venv-build/
+build-windows.log
+*.sfx
+7z.exe
+7z.dll
 
 # 用户字体不入库
 font/*

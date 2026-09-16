@@ -153,7 +153,7 @@ GUI 的动画下拉框和参数控件会读取 `ANIM_REGISTRY` 与 `params_schem
 
 面向用户的说明从 [`README.md`](../README.md) 开始，按主题拆分到 `docs/`。`AGENTS.md` 是代理和贡献约束，不要把它当作最终用户教程。
 
-PyInstaller 的发布方向写在 [`DESIGN.md`](../DESIGN.md) 第 9.2 节。仓库当前未提交专用 `.spec` 文件；打包前要确认 `font/`、需要的资源目录以及可选 FFmpeg 的分发策略。
+PyInstaller 的发布方向写在 [`DESIGN.md`](../DESIGN.md) 第 9.2 节。仓库提供 `LRCVideoMaker.spec` 和 `scripts/build_windows.py`，固定依赖及构建、搬移验证步骤见 [README 的 Windows 绿色版章节](../README.md#windows-绿色版构建与验证)。
 
 提交前建议运行：
 

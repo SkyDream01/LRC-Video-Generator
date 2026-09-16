@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QImage, QKeySequence, QPainter, QShortcut
+from PySide6.QtGui import QIcon, QImage, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -644,6 +644,7 @@ def run_gui() -> int:
     )  # instance() 类型为 QApplication | QCoreApplication
     app.setApplicationName("LVM")
     app.setApplicationDisplayName("LVM — LRC Video Maker")
+    app.setWindowIcon(QIcon(str(Path(__file__).resolve().parents[2] / "assets" / "logo.ico")))
     win = MainWindow()
     win.show()
     return app.exec()
