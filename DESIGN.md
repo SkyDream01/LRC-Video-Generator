@@ -538,7 +538,7 @@ scale/filter 路径完成 BT.709 limited-range 转换。非 4 字节对齐行距
 透视投影小图层（相机距离为图层最大尺寸的 2.5 倍），预览与导出共用。
 这属于平面贴图的 3D 透视效果，不需要额外 GPU 或 3D 引擎。
 
-v1 `layout_preset` 仅实现 `landscape_mv`（封面左 / 歌词右）。schema 预留以便后续 `portrait_9_16` 等，避免再破格式。
+`layout_preset` 支持 `landscape_mv`（封面左 / 歌词右）和 `landscape_mv_reversed`（歌词左 / 封面右）。schema 预留以便后续 `portrait_9_16` 等。
 
 **版本兼容策略**：读取时按 `version` 字段逐级迁移。v1.0 若 `animations` 为字符串（如 `"cover": "disc_rotate"`），升为 `{type, params:{}}`。内存中始终表示为最新模型；保存一律写当前版本号。未知字段忽略不报错（向前兼容）。
 
@@ -636,6 +636,8 @@ core 测试不依赖 Qt。composite 金帧单独标记，FreeType/Qt 版本差�
 ### 自定义左右布局
 
 输出面板提供「左右布局」（封面左 / 歌词右，或歌词左 / 封面右），以及封面、歌词各自的水平偏移（逻辑像素，负数左移、正数右移）。偏移后的静态区域限制在画布内，允许用户自行安排重叠。布局统一由 core 的 compute_layout 计算，预览与导出共用。
+
+所有动画使用偏移后的布局矩形。圆弧歌词按两个区域中心的实际左右关系选择朝向：歌词在右时以左边缘内缩 12px 为锚点、主词和译文左对齐，在左时以右边缘内缩 12px 为锚点、主词和译文右对齐；仅镜像圆弧几何和倾角，不镜像文字。中心重合时采用向右方向；圆弧半径使用歌词锚点与封面中心的水平距离，独立偏移后重新计算。封面旋转、透视、倒影和星轨均以实际封面中心定位。歌词裁剪与调用方预览裁剪取交集。
 
 `.kproj` 的 `output` 增加 `cover_offset_x: 0`、`lyrics_offset_x: 0`；`layout_preset` 支持 `landscape_mv_reversed`，默认仍为 `landscape_mv`。旧工程缺失偏移字段时取 0。
 

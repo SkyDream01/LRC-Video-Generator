@@ -53,4 +53,62 @@ def test_arc_lyrics_follow_lyrics_region(tmp_path, preset):
     assert state == scene.eval(1.0)
     assert state.lyrics.items
     focused = next(item for item in state.lyrics.items if item.index == 0)
-    assert focused.x == pytest.approx(ctx.layout.lyrics_rect[0] + 12)
+    x, _, w, _ = ctx.layout.lyrics_rect
+    assert focused.x == pytest.approx(x + (12 if preset == "landscape_mv" else w - 12))
+
+
+from dataclasses import replace
+from app.core.anims.base import ANIM_REGISTRY
+
+
+@pytest.mark.parametrize("kind", ["lyrics", "cover"])
+@pytest.mark.parametrize("preset", ["landscape_mv", "landscape_mv_reversed"])
+@pytest.mark.parametrize("offsets", [(40, -40), (-1920, 1920), (1920, -1920)])
+def test_all_animation_layout_states(tmp_path, kind, preset, offsets):
+    project = KProj()
+    ctx = build_context(project, tmp_path,
+                        lrc_text="[00:00]Main\n[00:00]Translation\n[00:02]Next", duration_override=5)
+    from PIL import Image
+    ctx.cover = Image.new("RGB", (32, 32), (200, 60, 30))
+    original = ctx.layout
+    for name, cls in ANIM_REGISTRY[kind].items():
+        layer = cls({})
+        ctx.layout = original
+        ctx.assets[kind] = layer.prepare(ctx)
+        baseline = [layer.eval(t, ctx) for t in (0.1, 1.0, 2.1, 4.9, 5.0)]
+        ctx.layout = compute_layout(1920, 1080, preset, *offsets)
+        ctx.assets[kind] = layer.prepare(ctx)
+        dx = ctx.layout.lyrics_rect[0] - original.lyrics_rect[0]
+        for t, before in zip((0.1, 1.0, 2.1, 4.9, 5.0), baseline):
+            after = layer.eval(t, ctx)
+            assert after == layer.eval(t, ctx)
+            if kind == "cover":
+                assert after == before
+            elif name != "arc":
+                assert after == replace(before, items=tuple(replace(i, x=i.x+dx) for i in before.items))
+            else:
+                import math
+                assert all(math.isfinite(i.x) and math.isfinite(i.y) for i in after.items)
+                assert all(i.left_align != i.right_align for i in after.items)
+
+
+@pytest.mark.parametrize("offsets", [(0, 0), (40, -60), (1920, -1920)])
+def test_arc_mirrors_geometry_without_mirroring_text(tmp_path, offsets):
+    from app.core.anims.lyrics import ArcLyrics
+    ctx = build_context(KProj(), tmp_path,
+                        lrc_text="\n".join(f"[00:{i*2:02}]Line {i}" for i in range(8)), duration_override=18)
+    layer = ArcLyrics({})
+    ctx.layout = compute_layout(1920, 1080, "landscape_mv", *offsets)
+    ctx.assets["lyrics"] = layer.prepare(ctx)
+    before = layer.eval(6.2, ctx)
+    ctx.layout = compute_layout(1920, 1080, "landscape_mv_reversed", *(-v for v in offsets))
+    ctx.assets["lyrics"] = layer.prepare(ctx)
+    after = layer.eval(6.2, ctx)
+    assert before.items
+    for a, b in zip(before.items, after.items):
+        assert a.x + b.x == pytest.approx(1920)
+        assert a.y == pytest.approx(b.y)
+        assert a.angle == -b.angle
+        assert a.scale == b.scale
+        assert a.opacity == b.opacity
+        assert a.left_align == b.right_align

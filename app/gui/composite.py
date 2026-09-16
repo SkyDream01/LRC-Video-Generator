@@ -286,29 +286,34 @@ def _draw_lyrics(painter: QPainter, state: SceneState, assets: GuiAssets) -> Non
     painter.save()
     rx, ry, rw, rh = assets.lyric_rect
     if assets.arc_lyrics:
-        painter.setClipRect(QRectF(0, 0, *assets.canvas))
+        painter.setClipRect(QRectF(0, 0, *assets.canvas), Qt.ClipOperation.IntersectClip)
     else:
-        painter.setClipRect(QRectF(rx, ry, rw, rh))
+        painter.setClipRect(QRectF(rx, ry, rw, rh), Qt.ClipOperation.IntersectClip)
     for item in state.lyrics.items:
         if item.opacity <= 0.0 or item.reveal <= 0.0 or not 0 <= item.index < len(assets.lyric_lines):
             continue
         main_segs, sub_segs, sub_offset = assets.lyric_lines[item.index]
         painter.save()
         painter.setOpacity(clamp(item.opacity))
-        if item.left_align:
-            left = min((seg.ox for seg in main_segs), default=0)
+        def edge(segments: list[GuiBitmap]) -> float:
+            if item.right_align:
+                return max((seg.ox + seg.w for seg in segments), default=0.0)
+            return min((seg.ox for seg in segments), default=0.0)
+
+        aligned = item.left_align or item.right_align
+        if aligned:
+            anchor = edge(main_segs)
             painter.translate(item.x, item.y)
             painter.rotate(item.angle)
             painter.scale(item.scale, item.scale)
-            painter.translate(-item.x-left, -item.y)
+            painter.translate(-item.x-anchor, -item.y)
         height = max(
             [seg.oy + seg.h for seg in main_segs]
             + [sub_offset + seg.oy + seg.h for seg in sub_segs], default=0.0
         )
         _perspective(painter, item.x, item.y + height / 2,
                      item.tilt_x, 0.0, max(rw, height) * 2.5)
-        sub_shift = (min((seg.ox for seg in main_segs), default=0)
-                     - min((seg.ox for seg in sub_segs), default=0)) if item.left_align else 0
+        sub_shift = edge(main_segs) - edge(sub_segs) if aligned else 0
         for segments, dx, dy in ((main_segs, 0.0, 0.0), (sub_segs, sub_shift, sub_offset)):
             for seg in segments:
                 px, py = item.x + seg.ox + dx, item.y + seg.oy + dy

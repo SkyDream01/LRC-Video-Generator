@@ -292,3 +292,98 @@ def test_celestial_arc_composite():
     assert first != _render(scene.eval(3), gui)
     assert gui.cover_ornament is not None
     assert gui.arc_lyrics
+
+
+from dataclasses import replace
+from app.core.anims.base import ANIM_REGISTRY
+from app.core.context import compute_layout
+
+
+@pytest.mark.parametrize("kind,name", [(k, n) for k in ("lyrics", "cover") for n in ANIM_REGISTRY[k]])
+@pytest.mark.parametrize("preset,offset", [("landscape_mv", 40), ("landscape_mv_reversed", -40)])
+def test_all_effects_follow_layout_pixels(kind, name, preset, offset):
+    scene, _ = _make_scene(LYRC, {kind: name})
+    scene.ctx.layout = compute_layout(1920, 1080, preset)
+    scene.prepare()
+    gui = GuiAssets.from_context(scene.ctx)
+    gui.bg_image = None
+    gui.meta_segments = []
+    if kind == "lyrics":
+        gui.cover_face = None
+    else:
+        gui.lyric_lines = []
+    before = scene.eval(1.2)
+    a = qimage_to_rgb_array(_render(before, gui))
+    # 圆弧同步平移保留半径；其余动画独立移动，并反向移动另一图层。
+    cover_dx = offset if kind == "cover" or name == "arc" else -offset
+    lyrics_dx = offset if kind == "lyrics" else -offset
+    scene.ctx.layout = compute_layout(1920, 1080, preset, cover_dx, lyrics_dx)
+    scene.prepare()
+    shifted = GuiAssets.from_context(scene.ctx)
+    shifted.bg_image = None
+    shifted.meta_segments = []
+    if kind == "lyrics":
+        shifted.cover_face = None
+    else:
+        shifted.lyric_lines = []
+    state = scene.eval(1.2)
+    b = qimage_to_rgb_array(_render(state, shifted))
+    assert a.max() > 0
+    if offset > 0:
+        diff = np.abs(a[:, :-offset].astype(int) - b[:, offset:].astype(int))
+    else:
+        diff = np.abs(a[:, -offset:].astype(int) - b[:, :offset].astype(int))
+    assert diff.mean() < 0.02
+    assert diff.max() <= 8
+    # 预览的平移/缩放和裁剪不得被动画覆盖；同逻辑尺寸的离屏预览与导出逐像素一致。
+    image = QImage(1960, 1120, QImage.Format.Format_RGB888)
+    image.fill(Qt.GlobalColor.black)
+    painter = QPainter(image)
+    painter.translate(20, 20)
+    painter.setClipRect(0, 0, 1920, 1080)
+    transform = painter.transform()
+    clip = painter.clipRegion()
+    composite(painter, state, shifted)
+    assert painter.transform() == transform
+    assert painter.clipRegion() == clip
+    painter.end()
+    np.testing.assert_array_equal(qimage_to_rgb_array(image)[20:1100, 20:1940], b)
+
+
+@pytest.mark.parametrize("preset", ["landscape_mv", "landscape_mv_reversed"])
+def test_arc_bilingual_edges_and_caller_clip(preset):
+    from app.gui.composite import GuiBitmap
+    from app.core.anims.lyrics import LyricsState
+    scene, _ = _make_scene(LYRC, {"lyrics": "arc"})
+    scene.ctx.layout = compute_layout(1920, 1080, preset, 25, -25)
+    scene.prepare()
+    gui = GuiAssets.from_context(scene.ctx)
+    gui.bg_image = None
+    gui.cover_face = None
+    gui.meta_segments = []
+    def segment(width, height):
+        img = QImage(width, height, QImage.Format.Format_RGB888)
+        img.fill(Qt.GlobalColor.white)
+        return GuiBitmap(img, -width/2, 0, width, height)
+    gui.lyric_lines[0] = ([segment(200, 20)], [segment(300, 20)], 40)
+    state = scene.eval(2)
+    item = next(i for i in state.lyrics.items if i.index == 0)
+    item = replace(item, y=400)
+    state = replace(state, lyrics=LyricsState((item,), 0))
+    arr = qimage_to_rgb_array(_render(state, gui))
+    main = np.flatnonzero(arr[410, :, 0])
+    sub = np.flatnonzero(arr[450, :, 0])
+    if item.left_align:
+        assert main[0] == sub[0] == round(item.x)
+    else:
+        assert main[-1] == sub[-1] == round(item.x)-1
+    image = QImage(960, 540, QImage.Format.Format_RGB888)
+    image.fill(Qt.GlobalColor.black)
+    painter = QPainter(image)
+    painter.scale(.5, .5)
+    painter.setClipRect(round(item.x)-20, 400, 40, 20)
+    composite(painter, state, gui)
+    painter.end()
+    clipped = qimage_to_rgb_array(image)
+    assert clipped[200:210].max() > 0
+    assert clipped[220:230].max() == 0

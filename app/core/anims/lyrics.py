@@ -31,6 +31,7 @@ class LyricItem:
     angle: float = 0.0
     scale: float = 1.0
     left_align: bool = False
+    right_align: bool = False
 
 
 @dataclass(frozen=True)
@@ -310,7 +311,7 @@ class Flip3DLyrics(FadeLyrics):
 
 @register(KIND_LYRICS)
 class ArcLyrics(FadeLyrics):
-    """沿专辑右侧圆弧滚动，靠近焦点时连续放大与提亮。"""
+    """沿朝向歌词区域的圆弧滚动，靠近焦点时连续放大与提亮。"""
 
     anim_type: ClassVar[str] = "arc"
     label: ClassVar[str] = "圆弧歌词"
@@ -335,7 +336,8 @@ class ArcLyrics(FadeLyrics):
         x, y, w, h = ctx.layout.cover_rect
         cx, cy = x+w/2, y+h/2
         direction = 1 if assets.rect[0] + assets.rect[2]/2 >= cx else -1
-        radius = abs(assets.rect[0]-cx+12)
+        anchor = assets.rect[0] + (12 if direction > 0 else assets.rect[2] - 12)
+        radius = abs(anchor - cx)
         half = self.params["lines"]/2
         items = []
         for i in range(max(0, math.floor(focus-half)), min(len(assets.lines), math.ceil(focus+half)+1)):
@@ -347,7 +349,8 @@ class ArcLyrics(FadeLyrics):
             rad = math.radians(angle)
             scale = .48+.52*math.exp(-distance*distance*2)
             alpha = (.20+.80*math.exp(-distance*distance*2))*_smooth(clamp(half-distance))
-            items.append(LyricItem(i, assets.rect[0]+12+direction*radius*(math.cos(rad)-1),
+            items.append(LyricItem(i, anchor+direction*radius*(math.cos(rad)-1),
                 cy+radius*math.sin(rad)-assets.lines[i].height*scale/2,
-                alpha, i==idx, angle=angle*.45, scale=scale, left_align=True))
+                alpha, i==idx, angle=direction*angle*.45, scale=scale,
+                left_align=direction > 0, right_align=direction < 0))
         return LyricsState(tuple(items), idx)
