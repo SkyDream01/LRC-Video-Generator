@@ -18,7 +18,8 @@ def _require_ffmpeg() -> str:
     return ffmpeg
 
 
-def test_render_video_smoke(tmp_path: Path):
+@pytest.mark.parametrize("encoder", ["auto", "libx264"])
+def test_render_video_smoke(tmp_path: Path, encoder):
     from app.core.demo import make_demo_project
     from app.gui.exporter import render_video
 
@@ -31,6 +32,7 @@ def test_render_video_smoke(tmp_path: Path):
         work,
         tmp_path / "out.mp4",
         max_frames=30,
+        encoder_override=encoder,
         progress=lambda done, total: progress.append((done, total)),
     )
 
@@ -51,7 +53,7 @@ def test_render_video_smoke(tmp_path: Path):
                 "-select_streams",
                 "v:0",
                 "-show_entries",
-                "stream=width,height,r_frame_rate,color_space,color_primaries,color_transfer,color_range",
+                "stream=width,height,r_frame_rate,nb_frames,color_space,color_primaries,color_transfer,color_range",
                 "-of",
                 "csv=p=0",
                 str(result.output),
@@ -63,6 +65,7 @@ def test_render_video_smoke(tmp_path: Path):
         assert b"60/1" in proc.stdout
         assert b"bt709" in proc.stdout
         assert b"tv" in proc.stdout
+        assert b"30" in proc.stdout.strip().split(b",")
 
 
 def test_render_video_cancelled(tmp_path: Path):

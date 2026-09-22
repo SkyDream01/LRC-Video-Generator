@@ -7,6 +7,7 @@ render_video()；worker 线程只允许 QImage，禁止 QPixmap。
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -27,7 +28,7 @@ from ..core.encoder import (
 )
 from ..core.project import KProj
 from ..core.scene import Scene
-from .composite import GuiAssets, composite, qimage_rgb24_buffer
+from .composite import GuiAssets, composite
 
 ProgressCallback = Callable[[int, int], None]
 CancelCallback = Callable[[], bool]
@@ -160,14 +161,15 @@ def render_video(
                 encoder=enc,
                 video_bitrate=project.output.video_bitrate,
                 audio_bitrate=project.output.audio_bitrate,
+                input_pixel_format="bgr0" if sys.byteorder == "little" else "0rgb",
             )
-            image = QImage(width, height, QImage.Format.Format_RGB888)
+            # RGB32 是 Qt 原生绘制目标；直接传输，避免混合时反复打包 RGB24。
+            image = QImage(width, height, QImage.Format.Format_RGB32)
             # 所有内置背景都会覆盖完整画布；只有缺失背景资源时才需要
             # 每帧清空，避免上一帧残留。
             needs_clear = gui_assets.bg_image is None
             if needs_clear:
                 image.fill(Qt.GlobalColor.black)
-            packed_scratch: bytearray | None = None
             with EncoderSession(command) as session:
                 painter = QPainter(image)
                 try:
@@ -178,9 +180,7 @@ def render_video(
                             image.fill(Qt.GlobalColor.black)
                         state = scene.eval(i / fps)
                         composite(painter, state, gui_assets)
-                        frame, packed_scratch = qimage_rgb24_buffer(
-                            image, packed_scratch
-                        )
+                        frame = memoryview(image.constBits()).cast("B")
                         session.write_frame(frame)
                         done = i + 1
                         if progress is not None and (

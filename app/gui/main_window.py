@@ -470,7 +470,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("暂无可预览内容", 4000)
             return
         t = self.audio.position_s()
-        img = QImage(CANVAS_W, CANVAS_H, QImage.Format.Format_RGB888)
+        img = QImage(CANVAS_W, CANVAS_H, QImage.Format.Format_RGB32)
         img.fill(Qt.GlobalColor.black)
         painter = QPainter(img)
         try:

@@ -52,8 +52,8 @@ def qimage_rgb24_buffer(
 ) -> tuple[memoryview, bytearray | None]:
     """返回可直接喂给 FFmpeg ``rgb24`` 输入的帧缓冲。
 
-    ``Format_RGB888`` 的默认 1920×1080 行距恰好没有 padding，因此生产导出
-    直接返回 QImage 内存视图。若用户配置了导致行填充的宽度，则复用一个紧凑
+    ``Format_RGB888`` 的默认 1920×1080 行距恰好没有 padding，此时
+    直接返回 QImage 内存视图。若调用方使用导致行填充的宽度，则复用一个紧凑
     的 bytearray，逐行去掉 padding，保证 rawvideo 的帧大小恒为 ``w*h*3``。
     """
     if img.format() != QImage.Format.Format_RGB888:
@@ -138,7 +138,7 @@ class GuiAssets:
         if KIND_BG in ctx.assets and isinstance(ctx.assets[KIND_BG], BgAssets):
             bg = ctx.assets[KIND_BG]  # type: ignore[assignment]
         # 在资源准备阶段转换为 Qt 光栅引擎的原生格式，避免缩放/混合时
-        # 每帧重复转换 RGB888 和 straight alpha。导出目标仍为紧凑 RGB888。
+        # 每帧重复转换 RGB888 和 straight alpha。
         bg_image = (
             numpy_to_qimage(bg.bitmap).convertToFormat(QImage.Format.Format_RGB32)
             if bg is not None

@@ -243,8 +243,11 @@ def build_encode_command(
     encoder: str = SOFTWARE_ENCODER,
     video_bitrate: str = "12M",
     audio_bitrate: str = "320k",
+    input_pixel_format: str = "rgb24",
 ) -> list[str]:
     """构建完整编码命令：rawvideo stdin + 音频 + BT.709/tv + faststart。"""
+    if input_pixel_format not in ("rgb24", "bgr0", "0rgb"):
+        raise ValueError(f"不支持的输入像素格式：{input_pixel_format}")
     encoder = normalize_encoder(encoder)
     return [
         ffmpeg,
@@ -252,6 +255,10 @@ def build_encode_command(
         "-hide_banner",
         "-loglevel",
         "error",
+        # 单路 1080p 颜色转换限制滤镜线程，避免与 Qt 合成争抢 CPU。
+        # 不限制编码器自身的线程。
+        "-filter_threads",
+        "1",
         # 输入 0：紧凑 RGB rawvideo。颜色空间转换交给 FFmpeg 的原生
         # scale/filter 路径，避免 Python/NumPy 每帧分配大块浮点数组。
         "-f",
@@ -261,7 +268,7 @@ def build_encode_command(
         "-framerate",
         str(fps),
         "-pix_fmt",
-        "rgb24",
+        input_pixel_format,
         "-colorspace",
         "bt709",
         "-color_primaries",

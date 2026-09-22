@@ -119,6 +119,31 @@ def test_build_encode_command_unknown_encoder_forced_libx264():
     assert "-c:v libx264" in " ".join(cmd)
 
 
+@pytest.mark.parametrize("pixel_format", ["rgb24", "bgr0", "0rgb"])
+@pytest.mark.parametrize("codec", ENCODER_FALLBACK_CHAIN)
+def test_native_input_preserves_output_contract(pixel_format, codec):
+    cmd = build_encode_command(
+        ffmpeg="ffmpeg", width=1920, height=1080, fps=60, frames=120,
+        audio_path="a.wav", output_path="out.mp4", encoder=codec,
+        input_pixel_format=pixel_format,
+    )
+    input_end = cmd.index("pipe:0")
+    assert cmd[cmd.index("-pix_fmt") + 1] == pixel_format
+    assert cmd.index(pixel_format) < input_end
+    assert cmd[cmd.index("-filter_threads") + 1] == "1"
+    assert "-threads" not in cmd
+    assert "-pix_fmt yuv420p" in " ".join(cmd[input_end:])
+    assert "-color_range tv" in " ".join(cmd[input_end:])
+
+
+def test_rejects_unsupported_input_pixel_format():
+    with pytest.raises(ValueError, match="像素格式"):
+        build_encode_command(
+            ffmpeg="ffmpeg", width=2, height=2, fps=60, frames=1,
+            audio_path="a.wav", output_path="out.mp4", input_pixel_format="yuv420p",
+        )
+
+
 def test_encoder_session_accepts_memoryview_without_numpy_conversion():
     process = mock.Mock()
     process.stdin = mock.Mock()

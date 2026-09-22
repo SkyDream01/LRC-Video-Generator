@@ -36,3 +36,5 @@ font/*
 .vscode/
 Thumbs.db
 .DS_Store
+
+*.mp4

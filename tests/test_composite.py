@@ -33,8 +33,8 @@ def _make_scene(lrc: str, anims: dict[str, str] | None = None):
     return scene, GuiAssets.from_context(ctx)
 
 
-def _render(state, gui_assets) -> QImage:
-    img = QImage(1920, 1080, QImage.Format.Format_RGB888)
+def _render(state, gui_assets, fmt=QImage.Format.Format_RGB888) -> QImage:
+    img = QImage(1920, 1080, fmt)
     img.fill(Qt.GlobalColor.black)
     painter = QPainter(img)
     try:
@@ -345,6 +345,33 @@ def test_celestial_arc_composite():
 from dataclasses import replace
 from app.core.anims.base import ANIM_REGISTRY
 from app.core.context import compute_layout
+
+
+@pytest.mark.parametrize("kind,name", [(k, n) for k in ANIM_REGISTRY for n in ANIM_REGISTRY[k]])
+def test_native_export_target_matches_rgb24(kind, name):
+    """原生导出目标与原 RGB24 合成在所有动画下保持像素容差。"""
+    scene, gui = _make_scene(LYRC, {kind: name})
+    for t in (1.05, 2.0, 5.2):
+        state = scene.eval(t)
+        original = qimage_to_rgb_array(_render(state, gui)).astype(np.int16)
+        native = _render(state, gui, QImage.Format.Format_RGB32)
+        converted = native.convertToFormat(QImage.Format.Format_RGB888)
+        diff = np.abs(original - qimage_to_rgb_array(converted).astype(np.int16))
+        assert diff.max() <= 8
+        assert diff.mean() < 0.1
+
+
+@pytest.mark.parametrize("width", [2, 6, 1920])
+def test_native_export_buffer_layout(width):
+    """RGB32 无行填充，字节序和 FFmpeg bgr0/0rgb 输入一致。"""
+    import sys
+
+    img = QImage(width, 2, QImage.Format.Format_RGB32)
+    img.fill(QColor(17, 73, 201))
+    raw = memoryview(img.constBits()).cast("B")
+    pixel = bytes((201, 73, 17, 255)) if sys.byteorder == "little" else bytes((255, 17, 73, 201))
+    assert len(raw) == width * 2 * 4
+    assert bytes(raw) == pixel * (width * 2)
 
 
 @pytest.mark.parametrize("kind,name", [(k, n) for k in ("lyrics", "cover") for n in ANIM_REGISTRY[k]])

@@ -355,11 +355,11 @@ PCM 回退路径: 主时钟用已写入 QAudioSink 的帧数，不用 QMediaPlay
 | 光栅化与合成分离 | 字体/描边/模糊/唱片贴图只在 prepare；每帧只 blit/rotate |
 | 文本渲染缓存 | 每行紧 bbox RGBA + origin；淡入淡出/滚动只改 alpha 与位移 |
 | 背景缓存 | 静态模糊只算一次；波浪用 1/4 分辨率相位图 + 平移 UV |
-| Qt 贴图格式 | GuiAssets 创建时背景转 RGB32，透明贴图转 ARGB32_Premultiplied，避免逐帧缩放/混合重复转换；预览和导出共用，导出目标仍为 RGB888 |
+| Qt 贴图格式 | GuiAssets 创建时背景转 RGB32，透明贴图转 ARGB32_Premultiplied；导出及精确预览目标使用 RGB32，减少混合和缩放时的 RGB24 打包开销 |
 | 模糊降采样 | 高斯模糊先缩小 4 倍再放大，约 16× |
 | 唱片旋转 | composite 内 QPainter.rotate 小贴图，禁止全帧 rotate / 手写 warp |
 | 预览分辨率 | 资源按 1920×1080 一份；播放中 painter.scale；暂停可离屏满分辨率 |
-| 导出管道 | **默认** QImage 紧凑 RGB buffer 直写 stdin，由 FFmpeg 原生转 BT.709 limited-range yuv420p；`bufsize ≥ 8MB` |
+| 导出管道 | **默认** RGB32 buffer 零拷贝直写 stdin（小端 bgr0、大端 0rgb）；FFmpeg 原生转 BT.709 limited-range yuv420p，滤镜线程固定为 1，编码器线程保持自动；`bufsize ≥ 8MB` |
 | 帧数对齐 | `-frames:v N` 且 `N = round(duration * fps)`，不只靠 `-shortest` |
 | prepare 去重 | 参数 debounce 80ms + prep_gen，只接受最新一次 |
 | 预留并行 | `eval` 无副作用；v1.2 可多进程分块后再按序写管道 |
@@ -430,8 +430,8 @@ PCM 回退路径: 主时钟用已写入 QAudioSink 的帧数，不用 QMediaPlay
 **编码命令示例（软件兜底）：**
 
 ```bash
-ffmpeg -y -hide_banner -loglevel error \
-  -f rawvideo -video_size 1920x1080 -framerate 60 -pix_fmt rgb24 \
+ffmpeg -y -hide_banner -loglevel error -filter_threads 1 \
+  -f rawvideo -video_size 1920x1080 -framerate 60 -pix_fmt bgr0 \
   -colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range pc -i pipe:0 \
   -i "<audio>" -map 0:v -map 1:a \
   -vf "scale=in_range=full:out_range=tv:in_color_matrix=bt709:out_color_matrix=bt709,format=yuv420p" \
@@ -442,9 +442,11 @@ ffmpeg -y -hide_banner -loglevel error \
   -frames:v <N> -shortest -movflags +faststart "<output.mp4>"
 ```
 
-Python 侧不再为每帧分配 NumPy 浮点数组；统一传递紧凑 RGB，由 FFmpeg 的原生
-scale/filter 路径完成 BT.709 limited-range 转换。非 4 字节对齐行距的 QImage
-使用可复用的紧凑打包缓冲，默认 1920×1080 路径零拷贝。
+Python 侧直接传递 QImage RGB32 内存视图，由 FFmpeg 的原生 scale/filter 路径
+完成 BT.709 limited-range 转换。RGB32 每像素 4 字节，无行填充或逐帧打包；
+上述命令适用于小端平台，大端平台输入使用 0rgb。相比 RGB24 管道带宽增加约 1/3，
+换取 Qt 原生目标的合成速度；滤镜只使用一个线程，减少与 Qt 的 CPU 竞争，
+不限制编码器本身的并行度。build_encode_command 仍支持 RGB24 调用方。
 
 **硬件编码视频段参数替换：**
 
