@@ -3,6 +3,7 @@
 from app.core.context import build_context
 from app.core.project import KProj
 from app.core.scene import Scene
+import pytest
 
 
 def _scene(**anim_overrides) -> Scene:
@@ -83,3 +84,31 @@ def test_eval_before_prepare_raises():
     except RuntimeError:
         return
     raise AssertionError("未 prepare 时 eval 应抛 RuntimeError")
+
+
+@pytest.mark.parametrize("animation", ["fade", "scroll_list", "slide", "reveal", "flip_3d", "arc"])
+def test_word_timing_for_all_animations_and_seeking(animation):
+    project = KProj()
+    project.animations.lyrics.type = animation
+    ctx = build_context(project, ".", lrc_text="[00:01]<00:02>聪<00:04>明<00:06>\n[00:08]普通歌词", duration_override=10)
+    scene = Scene(ctx)
+    scene.prepare()
+    for t, expected in [(1.5, 0), (3, 0.5), (4, 1), (5, 1.5), (7, 2), (3, 0.5)]:
+        state = scene.eval(t)
+        item = next(item for item in state.lyrics.items if item.current)
+        assert item.word_progress == pytest.approx(expected)
+        assert state == scene.eval(t)
+    assert next(item for item in scene.eval(9).lyrics.items if item.current).word_progress is None
+
+
+def test_word_timing_missing_end_and_zero_duration():
+    ctx = build_context(KProj(), ".", lrc_text="[00:01]<00:01>A<00:01>B", duration_override=5)
+    scene = Scene(ctx)
+    scene.prepare()
+    assert scene.eval(1).lyrics.items[0].word_progress == 1
+    assert scene.eval(3).lyrics.items[0].word_progress == 1.5
+
+
+def test_duration_fallback_includes_word_timestamps():
+    ctx = build_context(KProj(), ".", lrc_text="[00:01]<00:01>A<00:10>B<00:15>")
+    assert ctx.duration == 15

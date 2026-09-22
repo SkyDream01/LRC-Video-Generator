@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -36,6 +36,9 @@ class PreparedBitmap:
 
     pixels: np.ndarray  # (H, W, 4) uint8
     origin: tuple[int, int] = (0, 0)
+    text: str = ""
+    char_edges: tuple[float, ...] = ()
+    char_start: int = 0
 
     @property
     def width(self) -> int:
@@ -125,7 +128,14 @@ def rasterize_text(
     if alpha_bbox:
         img = img.crop(alpha_bbox)
     pixels = np.asarray(img, dtype=np.uint8)
-    return PreparedBitmap(pixels=pixels, origin=(-pixels.shape[1] // 2, 0))
+    width = pixels.shape[1]
+    crop_left = alpha_bbox[0] if alpha_bbox else 0
+    edges = (0.0,) + tuple(
+        max(0.0, min(float(width), float(font.getlength(text[:i])) - left - crop_left))
+        for i in range(1, len(text))
+    ) + (float(width),)
+    return PreparedBitmap(pixels=pixels, origin=(-width // 2, 0),
+                          text=text, char_edges=edges)
 
 
 def _text_width(font, text: str, stroke_width: int) -> float:
@@ -200,30 +210,27 @@ def layout_text(
 def _wrap_two_lines(
     text: str, font, stroke_width: int, max_width: float
 ) -> list[str] | None:
-    """贪心换行为最多 2 行；一个字符都放不下时返回 None。"""
+    """贪心换行为最多 2 行；超出两行的尾文留给省略号裁剪。"""
     if _text_width(font, text[0], stroke_width) > max_width:
         return None
-    words = (
-        text.split(" ") if " " in text else list(text)
-    )  # 空格分词（西文），否则逐字（CJK）
+    words = text.split(" ") if " " in text else list(text)
+    separator = " " if " " in text else ""
     lines: list[str] = []
     cur = ""
-    for word in words:
-        trial = f"{cur} {word}".strip() if cur else word
+    for index, word in enumerate(words):
+        trial = cur + separator + word if cur else word
         if _text_width(font, trial, stroke_width) <= max_width or not cur:
             cur = trial
         else:
+            if len(lines) == WRAP_MAX_LINES - 1:
+                cur = trial + separator + separator.join(words[index + 1:])
+                break
             lines.append(cur)
             cur = word
-            if len(lines) >= WRAP_MAX_LINES:
-                break
     if len(lines) < WRAP_MAX_LINES and cur:
         lines.append(cur)
     if not lines:
         return None
-    if len(lines) > WRAP_MAX_LINES:
-        # 贪心提前 break 时剩余内容并入最后一行（由调用方截断兜底）
-        lines = lines[:WRAP_MAX_LINES]
     return lines
 
 
@@ -243,7 +250,7 @@ def _stack_segments(segs: list[PreparedBitmap], size: int) -> list[PreparedBitma
     y_offset = 0
     for seg in segs:
         out.append(
-            PreparedBitmap(pixels=seg.pixels, origin=(-seg.width // 2, y_offset))
+            replace(seg, origin=(-seg.width // 2, y_offset))
         )
         y_offset += seg.height + gap
     return out

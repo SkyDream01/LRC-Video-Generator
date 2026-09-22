@@ -139,6 +139,24 @@ def test_font_cache_fallback(monkeypatch, tmp_path):
     assert cache.get(None, 32) is font
 
 
+def test_timed_wrapped_lyrics_keep_character_mapping():
+    text = "聪明的你告诉我什么是真理" * 4
+    lrc = "[00:01]" + "".join(f"<00:{i + 1:02d}>{char}" for i, char in enumerate(text))
+    ctx = _ctx(lrc)
+    assets = FadeLyrics({}).prepare(ctx)
+    segments = assets.lines[0].main
+    assert len(segments) == 2
+    for seg in segments:
+        visible = seg.text.removesuffix("…")
+        assert ctx.lyrics[0].text[seg.char_start:seg.char_start + len(visible)] == visible
+        assert len(seg.char_edges) == len(seg.text) + 1
+        assert seg.char_edges[0] == 0
+        assert seg.char_edges[-1] == seg.width
+        assert all(a <= b for a, b in zip(seg.char_edges, seg.char_edges[1:]))
+        assert " " not in seg.text
+    assert segments[1].char_start == len(segments[0].text)
+
+
 @pytest.mark.parametrize("auto_extract", [True, False])
 @pytest.mark.parametrize("background", ["#FFFFFF", "#101014"])
 @pytest.mark.parametrize("main,sub,stroke", [

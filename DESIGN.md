@@ -271,7 +271,8 @@ Scene 拥有 prepare 缓存；层上不提供「内部再 prepare 再 composite�
 - 解析 `[mm:ss.xx]` / `[mm:ss.xxx]` / `[mm:ss]` 标签（兼容多标签行），得到条目 `(time, text)` 并按时间排序。
 - 元数据标签：`[ti:]` `[ar:]` `[al:]` `[offset:]`。`offset` 加到所有时间戳；标题/艺术家缺省时回退 ID3。
 - **双语配对规则**：相邻两条目**时间戳相同**或差值 `< 0.05s` 时，第二条视为第一条的译文，合并为一行。
-- `LyricLine.words: list[WordTiming] | None` 预留 Enhanced LRC（`<mm:ss.xx>词`）。v1 解析器可忽略词级标签，但数据模型必须留字段，避免 v1.2 破格式。
+- `LyricLine.words: list[WordTiming] | None` 支持 Enhanced LRC（`<mm:ss.xx>词` / `<mm:ss.xxx>字`）。剥离标签时保留原文空格，记录每段起止时间与纯文本字符区间；末尾空标签作为上一字结束时间，缺省取行结束时间。`offset` 同时调整行、字时间，多行时间标签按相对首行的差值平移字时间。
+- 逐字高亮自动叠加于所有歌词动画：prepare 缓存紧 bbox 文本位图及字符横向边界（含缩字/换行），Scene.eval 纯函数计算已唱字符进度，composite 用同一位图裁剪绘制已唱/未唱区域（原色 / 35% 不透明度）。不在 paintEvent 光栅化，不增加独立导出路径。译文仍按整行显示。
 - 每行区间 `end = 下一行.start`，最后一行 `end = 音频总时长`。
 - 当前行定位用 `bisect`，O(log n)。
 - 视频帧数 `N = round(duration * fps)`，`duration` 优先 ffprobe，失败再用 mutagen。
@@ -552,7 +553,7 @@ scale/filter 路径完成 BT.709 limited-range 转换。非 4 字节对齐行距
 | ------ | ------ | ------ |
 | 音频文件 | 文件路径 | 支持 .mp3 / .wav / .flac / .m4a |
 | 封面图片 | 文件路径 | 支持 .jpg / .jpeg / .png / .webp |
-| LRC 歌词 | 文件路径 | 支持标准 LRC 格式（含双语）；词级标签预留 |
+| LRC 歌词 | 文件路径 | 支持标准 LRC 格式（含双语）及 Enhanced LRC 逐字高亮 |
 | 背景图片 | 文件路径（可选） | 未设置时自动使用封面作为背景 |
 
 ### 8.2 歌词样式参数

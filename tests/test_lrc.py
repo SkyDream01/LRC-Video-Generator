@@ -78,7 +78,8 @@ def test_word_tags_stripped_and_parsed():
     line = doc.lines[0]
     assert "<" not in line.text
     assert line.words is not None and len(line.words) == 2
-    assert line.words[0].text == "Word"
+    assert line.text == "Word next"
+    assert line.words[0].text == "Word "
     assert line.words[0].start == 10.0
     assert line.words[1].end is None
 
@@ -91,3 +92,31 @@ def test_malformed_word_tags_tolerated():
 def test_empty_input():
     doc = parse_lrc("")
     assert doc.lines == []
+
+
+ENHANCED = "[00:24.870]<00:24.870>聪<00:26.360>明<00:26.670>的<00:26.810>你　<00:28.210>告<00:28.510>诉<00:29.210>我<00:29.670>什<00:29.870>么<00:29.970>是<00:30.270>真<00:30.820>理<00:32.550>"
+
+
+def test_enhanced_chinese_preserves_spacing_and_terminal_timestamp():
+    line = parse_lrc(ENHANCED).lines[0]
+    assert line.text == "聪明的你　告诉我什么是真理"
+    assert len(line.words) == 12
+    assert line.words[-1].end == 32.55
+    assert line.words[3].text == "你　"
+    for word in line.words:
+        assert line.text[word.char_start:word.char_end] == word.text
+
+
+def test_enhanced_offset_and_repeated_line_have_independent_timings():
+    lines = parse_lrc("[offset:-1500]\n[00:01][00:11]<00:01>A<00:02>B<00:03>").lines
+    assert [line.time for line in lines] == [0, 9.5]
+    assert [(w.start, w.end) for w in lines[0].words] == [(0, 0.5), (0.5, 1.5)]
+    assert [(w.start, w.end) for w in lines[1].words] == [(9.5, 10.5), (10.5, 11.5)]
+
+
+def test_enhanced_prefix_bilingual_and_duplicate_times():
+    line = parse_lrc("[00:01]前<00:01>A<00:01>B<00:02>\n[00:01]译文").lines[0]
+    assert line.text == "前AB"
+    assert line.translation == "译文"
+    assert line.words[0].char_start == 1
+    assert line.words[0].end == 1

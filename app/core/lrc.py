@@ -19,11 +19,13 @@ PAIR_TOLERANCE_S = 0.05
 
 @dataclass
 class WordTiming:
-    """词级时间（Enhanced LRC）。end 为 None 表示未知（取下一词 start）。"""
+    """词级时间与纯文本字符区间；end 缺省时取行结束时间。"""
 
     start: float
     end: float | None
     text: str
+    char_start: int = 0
+    char_end: int = 0
 
 
 @dataclass
@@ -76,17 +78,23 @@ def _split_word_tags(text: str) -> tuple[str, list[WordTiming]]:
         return text, []
     try:
         words: list[WordTiming] = []
+        char_start = matches[0].start()
         for i, m in enumerate(matches):
             start = _tag_to_seconds(m)
             end = _tag_to_seconds(matches[i + 1]) if i + 1 < len(matches) else None
             seg_start = m.end()
             seg_end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-            word_text = text[seg_start:seg_end].strip()
+            word_text = text[seg_start:seg_end]
             if word_text:
-                words.append(WordTiming(start=start, end=end, text=word_text))
+                words.append(WordTiming(
+                    start=start, end=max(start, end) if end is not None else None,
+                    text=word_text, char_start=char_start,
+                    char_end=char_start + len(word_text),
+                ))
+            char_start += len(word_text)
     except ValueError:
         return text, []  # 词级标签非法时按 v1 忽略
-    display = _WORD_TAG.sub(" ", text).strip()
+    display = _WORD_TAG.sub("", text)
     return display, words
 
 
@@ -138,12 +146,21 @@ def parse_lrc(text: str) -> LrcDocument:
             continue
         for t in times:
             entries.append(
-                LyricLine(time=t, text=body, words=list(words) if words else None)
+                LyricLine(time=t, text=body, words=[
+                    WordTiming(w.start + t - times[0],
+                               w.end + t - times[0] if w.end is not None else None,
+                               w.text, w.char_start, w.char_end)
+                    for w in words
+                ] or None)
             )
 
     offset_s = offset_ms / 1000.0
     for e in entries:
         e.time = max(0.0, e.time + offset_s)
+        for word in e.words or []:
+            word.start = max(0.0, word.start + offset_s)
+            if word.end is not None:
+                word.end = max(word.start, word.end + offset_s)
     entries.sort(key=lambda e: e.time)
 
     # 双语配对：相邻条目时间戳相同或差值 < 0.05s 时，第二条视为第一条的译文

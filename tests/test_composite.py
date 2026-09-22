@@ -92,6 +92,54 @@ def test_composite_deterministic_same_t():
     assert a == b  # QImage 逐像素相等
 
 
+def test_word_highlight_pixels_progress_and_match_plain_at_end():
+    from dataclasses import replace
+
+    scene, gui = _make_scene("[00:01]<00:02>聪<00:04>明<00:06>\n[00:01]译文")
+    state = scene.eval(3)
+    item = state.lyrics.items[0]
+
+    def render_progress(progress):
+        lyrics = replace(state.lyrics, items=(replace(item, word_progress=progress),))
+        return qimage_to_rgb_array(_render(replace(state, lyrics=lyrics), gui)).astype(int)
+
+    pending, partial, complete, plain = (render_progress(p) for p in (0, 0.5, 2, None))
+    np.testing.assert_array_equal(complete, plain)
+    main, sub, sub_offset = gui.lyric_lines[0]
+    seg = main[0]
+    x, y = round(item.x + seg.ox), round(item.y + seg.oy)
+    split = round(seg.char_edges[1])
+    assert np.abs(partial[y:y+int(seg.h), x:x+split] - pending[y:y+int(seg.h), x:x+split]).sum() > 0
+    np.testing.assert_array_equal(partial[y:y+int(seg.h), x+split:x+int(seg.w)],
+                                  pending[y:y+int(seg.h), x+split:x+int(seg.w)])
+    for seg in sub:
+        x, y = round(item.x + seg.ox), round(item.y + sub_offset + seg.oy)
+        np.testing.assert_array_equal(pending[y:y+int(seg.h), x:x+int(seg.w)],
+                                      complete[y:y+int(seg.h), x:x+int(seg.w)])
+
+
+def test_wrapped_word_highlight_finishes_first_row_before_second():
+    from dataclasses import replace
+
+    text = "聪明的你告诉我什么是真理" * 4
+    lrc = "[00:01]" + "".join(f"<00:{i + 1:02d}>{char}" for i, char in enumerate(text))
+    scene, gui = _make_scene(lrc)
+    state = scene.eval(3)
+    item = state.lyrics.items[0]
+    main, _, _ = gui.lyric_lines[0]
+    assert len(main) == 2
+    first_done = replace(item, word_progress=float(main[1].char_start))
+    result = qimage_to_rgb_array(_render(replace(state, lyrics=replace(state.lyrics, items=(first_done,))), gui))
+    plain = qimage_to_rgb_array(_render(replace(state, lyrics=replace(state.lyrics, items=(replace(item, word_progress=None),))), gui))
+    for index, seg in enumerate(main):
+        x, y = round(item.x + seg.ox), round(item.y + seg.oy)
+        a, b = result[y:y+int(seg.h), x:x+int(seg.w)], plain[y:y+int(seg.h), x:x+int(seg.w)]
+        if index == 0:
+            np.testing.assert_array_equal(a, b)
+        else:
+            assert np.abs(a.astype(int) - b.astype(int)).sum() > 0
+
+
 def test_lyrics_drawn_inside_lyrics_rect():
     with_lrc, gui = _make_scene(LYRC)
     without_lrc, gui_empty = _make_scene("")

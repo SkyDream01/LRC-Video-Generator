@@ -15,7 +15,7 @@ from .anims.base import (
     layer_class,
 )
 from .anims.cover import CoverState
-from .anims.lyrics import LyricsState
+from .anims.lyrics import LyricsState, apply_word_timing
 from .context import RenderContext
 from .prepare import PreparedBitmap, layout_text
 
@@ -98,6 +98,7 @@ class Scene:
             raise RuntimeError("Scene.eval 前必须先 prepare()")
         bg = cast(BgState, self.layers[KIND_BACKGROUND].eval(t, self.ctx))
         lyrics = cast(LyricsState, self.layers[KIND_LYRICS].eval(t, self.ctx))
+        lyrics = apply_word_timing(lyrics, t, self.ctx)
         cover = cast(CoverState, self.layers[KIND_COVER].eval(t, self.ctx))
         meta_alpha = clamp(t / META_FADE_S) if self.ctx.meta_text else 0.0
         return SceneState(

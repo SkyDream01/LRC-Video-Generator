@@ -86,6 +86,8 @@ class GuiBitmap:
     oy: float
     w: float
     h: float
+    char_edges: tuple[float, ...] = ()
+    char_start: int = 0
 
 
 def _gui_bitmap(pb: PreparedBitmap | None) -> GuiBitmap | None:
@@ -99,6 +101,8 @@ def _gui_bitmap(pb: PreparedBitmap | None) -> GuiBitmap | None:
         pb.origin[1],
         pb.width,
         pb.height,
+        pb.char_edges,
+        pb.char_start,
     )
 
 
@@ -317,16 +321,29 @@ def _draw_lyrics(painter: QPainter, state: SceneState, assets: GuiAssets) -> Non
         for segments, dx, dy in ((main_segs, 0.0, 0.0), (sub_segs, sub_shift, sub_offset)):
             for seg in segments:
                 px, py = item.x + seg.ox + dx, item.y + seg.oy + dy
-                if item.reveal >= 1.0:
-                    painter.drawImage(QPointF(px, py), seg.image)
-                else:
-                    painter.save()
+                painter.save()
+                if item.reveal < 1.0:
                     painter.setClipRect(
                         QRectF(px, py, seg.w * clamp(item.reveal), seg.h),
                         Qt.ClipOperation.IntersectClip,
                     )
+                if segments is main_segs and item.word_progress is not None and seg.char_edges:
+                    progress = max(0.0, min(len(seg.char_edges) - 1,
+                                            item.word_progress - seg.char_start))
+                    index = int(progress)
+                    width = seg.char_edges[index]
+                    if index + 1 < len(seg.char_edges):
+                        width += (seg.char_edges[index + 1] - width) * (progress - index)
+                    painter.save()
+                    painter.setClipRect(QRectF(px + width, py, seg.w - width, seg.h),
+                                        Qt.ClipOperation.IntersectClip)
+                    painter.setOpacity(clamp(item.opacity) * 0.35)
                     painter.drawImage(QPointF(px, py), seg.image)
                     painter.restore()
+                    painter.setClipRect(QRectF(px, py, width, seg.h), Qt.ClipOperation.IntersectClip)
+                    painter.setOpacity(clamp(item.opacity))
+                painter.drawImage(QPointF(px, py), seg.image)
+                painter.restore()
         painter.restore()
     painter.restore()
 

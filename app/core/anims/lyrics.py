@@ -32,6 +32,7 @@ class LyricItem:
     scale: float = 1.0
     left_align: bool = False
     right_align: bool = False
+    word_progress: float | None = None  # 已唱字符数，含当前字的连续进度
 
 
 @dataclass(frozen=True)
@@ -93,6 +94,12 @@ def build_lyrics_assets(ctx: RenderContext) -> LyricsAssets:
             if line.translation
             else []
         )
+        cursor = 0
+        for seg in main_segs:
+            visible_text = seg.text.removesuffix("…")
+            position = line.text.find(visible_text, cursor)
+            seg.char_start = position if position >= 0 else cursor
+            cursor = seg.char_start + len(visible_text)
         main_height = (
             (main_segs[-1].origin[1] + main_segs[-1].height) if main_segs else 0.0
         )
@@ -117,6 +124,25 @@ def build_lyrics_assets(ctx: RenderContext) -> LyricsAssets:
     return LyricsAssets(
         lines=lines, rect=rect, starts=line_starts(ctx.intervals), step=step
     )
+
+
+def apply_word_timing(state: LyricsState, t: float, ctx: RenderContext) -> LyricsState:
+    """给任意行级动画叠加逐字进度；无像素操作，支持任意时间跳转。"""
+    items = []
+    for item in state.items:
+        line = ctx.lyrics[item.index]
+        if not line.words:
+            items.append(item)
+            continue
+        progress = float(line.words[0].char_start)
+        for word in line.words:
+            if t < word.start:
+                break
+            end = word.end if word.end is not None else ctx.intervals[item.index][1]
+            fraction = clamp((t - word.start) / (end - word.start)) if end > word.start else 1.0
+            progress = max(progress, word.char_start + (word.char_end - word.char_start) * fraction)
+        items.append(replace(item, word_progress=progress))
+    return replace(state, items=tuple(items))
 
 
 @register(KIND_LYRICS)

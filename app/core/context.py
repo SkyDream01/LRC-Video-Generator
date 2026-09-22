@@ -168,7 +168,10 @@ def build_context(
         except ValueError:
             duration = 0.0
     if duration <= 0.0 and lyrics:
-        duration = lyrics[-1].time + _NO_AUDIO_TAIL_S
+        last = lyrics[-1]
+        timed_end = max((word.end if word.end is not None else word.start + _NO_AUDIO_TAIL_S
+                         for word in last.words or []), default=last.time)
+        duration = max(last.time + _NO_AUDIO_TAIL_S, timed_end)
 
     # 元数据：LRC 标签回退 ID3
     tags = read_audio_meta(audio_path) if audio_path is not None else {}
