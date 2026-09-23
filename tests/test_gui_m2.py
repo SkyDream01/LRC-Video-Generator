@@ -498,6 +498,45 @@ def test_timeline_time_label_and_playing_state(qapp):
 # ---------------------------------------------------------------- 主窗口冒烟
 
 
+def test_export_timing_lifecycle(qapp, monkeypatch):
+    from types import SimpleNamespace
+    from app.gui import main_window
+
+    now = [100.0]
+    monkeypatch.setattr(main_window, "monotonic", lambda: now[0])
+    monkeypatch.setattr(main_window.MainWindow, "_start_encoder_probe", lambda self: None)
+    messages = []
+    monkeypatch.setattr(main_window.QMessageBox, "information", lambda *args: messages.append(args[2]))
+    monkeypatch.setattr(main_window.QMessageBox, "critical", lambda *args: None)
+    win = main_window.MainWindow()
+    try:
+        win._on_export_started()
+        assert win._export_timer.isActive()
+        assert "估算中" in win._export_metrics.text()
+        now[0] = 105.0
+        win._on_export_progress(600, 1800)
+        assert "2.00×" in win._export_metrics.text()
+        assert "00:10.0" in win._export_metrics.text()
+        win._on_export_progress(1800, 1800)
+        assert "正在封装" in win._export_metrics.text()
+        now[0] = 110.0
+        win._on_export_finished(SimpleNamespace(
+            output="out.mp4", encoder="libx264", frames=1800, fps=60, duration=30.0
+        ))
+        assert "渲染时间 00:10.0" in messages[0]
+        assert "3.00×" in messages[0]
+        assert not win._export_timer.isActive()
+        assert win._export_metrics.isHidden()
+        for finish in (win._on_export_cancelled, lambda: win._on_export_failed("test")):
+            win._on_export_started()
+            assert "00:00.0" in win._export_metrics.text()
+            finish()
+            assert not win._export_timer.isActive()
+            assert win._export_timing is None
+    finally:
+        win.close()
+
+
 def test_main_window_smoke(qapp, tmp_path):
     from app.gui.main_window import MainWindow
 

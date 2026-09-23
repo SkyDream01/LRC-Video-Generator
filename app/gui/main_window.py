@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import sys
+from time import monotonic
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal
@@ -39,6 +40,7 @@ from ..core.project import default_output_name
 from ..core.timeline import line_starts
 from .composite import composite
 from .controllers import ExportController, ProjectController
+from .export_timing import ExportTiming
 from .panels.input_panel import InputPanel
 from .panels.params_panel import ParamsPanel
 from .preview import CANVAS_H, CANVAS_W, PreviewSurface
@@ -79,6 +81,10 @@ class MainWindow(QMainWindow):
         self._scrub_was_playing = False
         self._pending_seek: float | None = None
         self._probe_worker: EncoderProbeWorker | None = None
+        self._export_timing: ExportTiming | None = None
+        self._export_timer = QTimer(self)
+        self._export_timer.setInterval(500)
+        self._export_timer.timeout.connect(self._refresh_export_timing)
 
         # ---- 面板 ----
         self.input_panel = InputPanel()
@@ -139,6 +145,14 @@ class MainWindow(QMainWindow):
         self._progress.setTextVisible(True)
         self._progress.setVisible(False)
 
+        self._export_metrics = QLabel()
+        self._export_metrics.setObjectName("statusMetric")
+        self._export_metrics.setToolTip(
+            "渲染倍数 = 已渲染视频时长 ÷ 实际耗时；2× 表示两倍实时速度。\n"
+            "预计剩余按当前编码尝试的平均速度估算，不含最终封装时间。"
+        )
+        self._export_metrics.setVisible(False)
+
         self._encoder_label = QLabel("编码器: 探测中…")
         self._encoder_label.setObjectName("statusMetric")
         self._fps_label = QLabel("预览 -- fps")
@@ -155,6 +169,7 @@ class MainWindow(QMainWindow):
         bar.addPermanentWidget(self._engine_label)
         bar.addPermanentWidget(self._fps_label)
         bar.addPermanentWidget(self._encoder_label)
+        bar.addPermanentWidget(self._export_metrics)
         bar.addPermanentWidget(self._progress)
         bar.addPermanentWidget(self._export_btn)
 
@@ -515,19 +530,52 @@ class MainWindow(QMainWindow):
         )
 
     def _on_export_started(self) -> None:
+        now = monotonic()
+        self._export_timing = ExportTiming(
+            now, self.project_ctrl.project.output.fps, now
+        )
+        self._engine_label.hide()
+        self._fps_label.hide()
+        self._export_metrics.show()
+        self._refresh_export_timing()
+        self._export_timer.start()
         self._export_btn.setText("取消导出")
         self._export_btn.setEnabled(True)
         self._progress.setRange(0, 100)
         self._progress.setValue(0)
+        self._progress.setFormat("%p%")
         self._progress.setVisible(True)
         self.statusBar().showMessage("导出中…", 0)
 
     def _on_export_progress(self, done: int, total: int) -> None:
+        if self._export_timing is not None:
+            self._export_timing.update(done, total, monotonic())
+            self._refresh_export_timing()
         self._progress.setMaximum(total)
         self._progress.setValue(done)
         self._progress.setFormat(f"%p% ({done}/{total} 帧)")
 
+    def _refresh_export_timing(self) -> None:
+        timing = self._export_timing
+        if timing is None:
+            return
+        now = monotonic()
+        remaining, speed = timing.estimate(now)
+        eta = format_time(remaining) if remaining is not None else "估算中…"
+        if timing.total > 0 and timing.done == timing.total:
+            eta = "正在封装…"
+        rate = f"{speed:.2f}×" if speed is not None else "--"
+        self._export_metrics.setText(
+            f"渲染时间 {format_time(timing.elapsed(now))}\n"
+            f"预计剩余 {eta} · 渲染倍数 {rate}"
+        )
+
     def _on_export_finished(self, result) -> None:  # ExportResult
+        summary = ""
+        if self._export_timing is not None:
+            elapsed = self._export_timing.elapsed(monotonic())
+            speed = result.frames / result.fps / elapsed if elapsed > 0 else 0.0
+            summary = f"\n渲染时间 {format_time(elapsed)} · 平均渲染倍数 {speed:.2f}×"
         self._reset_export_ui()
         self.statusBar().showMessage(
             f"导出完成: {result.output}（{result.encoder} · {result.frames} 帧）", 10000
@@ -536,7 +584,7 @@ class MainWindow(QMainWindow):
             self,
             "导出完成",
             f"{result.output}\n\n编码器 {result.encoder} · {result.frames} 帧 · "
-            f"{result.fps} fps · 时长 {result.duration:.2f}s",
+            f"{result.fps} fps · 时长 {result.duration:.2f}s{summary}",
         )
 
     def _on_export_cancelled(self) -> None:
@@ -548,6 +596,11 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "导出失败", message)
 
     def _reset_export_ui(self) -> None:
+        self._export_timer.stop()
+        self._export_timing = None
+        self._export_metrics.hide()
+        self._engine_label.show()
+        self._fps_label.show()
         self._export_btn.setText("导出视频")
         self._export_btn.setEnabled(self._can_export_now())
         self._progress.setVisible(False)
