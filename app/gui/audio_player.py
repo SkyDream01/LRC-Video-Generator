@@ -15,8 +15,13 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QIODevice, QObject, QProcess, QUrl, Signal
+from PySide6.QtCore import QIODevice, QObject, QProcess, QTimer, QUrl, Signal
 from PySide6.QtMultimedia import QAudioFormat, QAudioOutput, QAudioSink, QMediaPlayer
+
+try:
+    from PySide6.QtMultimedia import QtAudio as AudioEnums
+except ImportError:  # Qt 6.6–6.8
+    from PySide6.QtMultimedia import QAudio as AudioEnums
 
 from ..core.encoder import find_binary
 
@@ -81,6 +86,10 @@ class _PcmEngine(QObject):
         self._playing = False
         self._suspended = False
         self._pending = bytearray()
+        self._decoded = False
+        self._pump = QTimer(self)
+        self._pump.setInterval(20)
+        self._pump.timeout.connect(self._flush)
 
     # ---- 状态 ----
 
@@ -112,14 +121,15 @@ class _PcmEngine(QObject):
 
     def pause(self) -> None:
         if self._sink is not None and self._playing and not self._suspended:
-            self._base_t = self.position_s()
             self._sink.suspend()
             self._suspended = True
             self._playing = False
             self.playbackChanged.emit(False)
 
     def stop(self) -> None:
+        self._pump.stop()
         if self._process is not None:
+            self._process.finished.disconnect(self._on_process_finished)
             self._process.close()
             self._process.deleteLater()
             self._process = None
@@ -130,6 +140,7 @@ class _PcmEngine(QObject):
         self._io = None
         self._base_t = 0.0
         self._pending.clear()
+        self._decoded = False
         self._suspended = False
         was = self._playing
         self._playing = False
@@ -138,7 +149,7 @@ class _PcmEngine(QObject):
 
     def seek(self, t: float) -> None:
         """seek：杀进程重启解码流（-ss 快速定位）。"""
-        was_playing = self._playing or self._suspended
+        was_playing = self._playing
         self.stop()
         self._base_t = t
         if was_playing:
@@ -159,12 +170,16 @@ class _PcmEngine(QObject):
         sink.setVolume(1.0)
         self._io = sink.start()
         self._sink = sink
-        sink.stateChanged.connect(lambda _s: self._flush())
+        if self._io is None:
+            self.stop()
+            self.error.emit("无法打开音频输出设备，请检查系统声音设置")
+            return
 
         process = QProcess(self)
         process.setProcessChannelMode(QProcess.ProcessChannelMode.SeparateChannels)
         process.finished.connect(self._on_process_finished)
         process.readyReadStandardOutput.connect(self._on_stdout)
+        process.errorOccurred.connect(self._on_process_error)
         args = [
             "-v",
             "error",
@@ -184,11 +199,13 @@ class _PcmEngine(QObject):
             str(PCM_SAMPLE_RATE),
             "pipe:1",
         ]
-        process.start(ffmpeg, args)
         self._process = process
         self._playing = True
         self._suspended = False
+        self._decoded = False
+        self._pump.start()
         self.playbackChanged.emit(True)
+        process.start(ffmpeg, args)
 
     def _on_stdout(self) -> None:
         if self._process is None:
@@ -197,8 +214,15 @@ class _PcmEngine(QObject):
         self._flush()
 
     def _flush(self) -> None:
-        """按剩余缓冲写入，多余字节留在 _pending（readyRead/stateChanged 再驱动）。"""
-        if self._io is None or self._sink is None or not self._pending:
+        """持续补充音频缓冲，解码结束后等待设备播完尾音。"""
+        if self._io is None or self._sink is None or not self._playing:
+            return
+        if not self._pending:
+            if self._decoded and self._sink.state() == AudioEnums.State.IdleState:
+                end_t = self.position_s()
+                self.stop()
+                self._base_t = end_t
+                self.finished.emit()
             return
         free = self._sink.bytesFree()
         if free <= 0:
@@ -209,14 +233,21 @@ class _PcmEngine(QObject):
             del self._pending[:written]
 
     def _on_process_finished(self, code: int, _status) -> None:
-        if code != 0:
+        if self._process is None:
             return
-        was = self._playing
-        self._playing = False
-        self._suspended = False
-        if was:
-            self.playbackChanged.emit(False)
-        self.finished.emit()
+        if code != 0:
+            message = bytes(self._process.readAllStandardError()).decode("utf-8", "replace").strip()
+            self.stop()
+            self.error.emit(f"音频解码失败：{message or code}")
+            return
+        self._on_stdout()
+        self._decoded = True
+        self._flush()
+
+    def _on_process_error(self, error) -> None:
+        if error == QProcess.ProcessError.FailedToStart:
+            self.stop()
+            self.error.emit("无法启动 ffmpeg 音频解码进程")
 
 
 class AudioPlayer(QObject):
@@ -236,6 +267,7 @@ class AudioPlayer(QObject):
         self._frozen_t = 0.0  # 暂停/未播放时的位置
         self._duration = 0.0
         self._holdout_until = 0.0  # mono 时刻，之前不做 PTS 纠漂
+        self._play_requested = False
 
         self._player = QMediaPlayer(self)
         self._audio_out = QAudioOutput(self)
@@ -244,6 +276,8 @@ class AudioPlayer(QObject):
         self._player.positionChanged.connect(self._on_position_changed)
         self._player.durationChanged.connect(self._on_duration_changed)
         self._player.errorOccurred.connect(self._on_qt_error)
+        self._player.playbackStateChanged.connect(self._on_qt_state)
+        self._player.mediaStatusChanged.connect(self._on_qt_status)
         self._pcm = _PcmEngine(self)
         self._pcm.playbackChanged.connect(self.playbackChanged)
         self._pcm.finished.connect(self._on_finished)
@@ -294,6 +328,7 @@ class AudioPlayer(QObject):
     def play(self) -> None:
         if not self._source:
             return
+        self._play_requested = True
         start_t = self._frozen_t
         if 0.0 < self._duration <= start_t:
             start_t = 0.0  # 播完后再按播放 → 从头开始
@@ -312,6 +347,7 @@ class AudioPlayer(QObject):
                 self.durationChanged.emit(d)
 
     def pause(self) -> None:
+        self._play_requested = False
         if not self._source:
             return
         if self.is_playing():
@@ -328,6 +364,7 @@ class AudioPlayer(QObject):
             self.play()
 
     def stop(self) -> None:
+        self._play_requested = False
         was = self.is_playing()
         self._frozen_t = 0.0
         self.clock.anchor(0.0)
@@ -387,20 +424,38 @@ class AudioPlayer(QObject):
 
     # ---- 引擎信号 ----
 
+    def _on_qt_state(self, state) -> None:
+        if self._engine != "qt":
+            return
+        playing = state == QMediaPlayer.PlaybackState.PlayingState
+        self._frozen_t = self._player.position() / 1000.0
+        if playing:
+            self.clock.anchor(self._frozen_t)
+            self._mark_holdout()
+        self.playbackChanged.emit(playing)
+
+    def _on_qt_status(self, status) -> None:
+        if self._engine == "qt" and status == QMediaPlayer.MediaStatus.EndOfMedia:
+            self._on_finished()
+
     def _on_position_changed(self, ms: int) -> None:
-        if not self.is_playing():
+        if self._engine == "qt" and not self.is_playing():
             self._frozen_t = ms / 1000.0
 
     def _on_duration_changed(self, ms: int) -> None:
+        if self._engine != "qt":
+            return
         self._duration = ms / 1000.0
         if self._duration > 0:
             self.durationChanged.emit(self._duration)
 
     def _on_qt_error(self, error, error_string: str) -> None:
-        if error == QMediaPlayer.Error.NoError:
+        if error == QMediaPlayer.Error.NoError or self._engine != "qt" or not self._source:
             return
-        was_playing = self.is_playing()
+        was_playing = self._play_requested
+        self._frozen_t = self.position_s()
         self._engine = "pcm"
+        self._player.stop()
         self._pcm.load(self._source)
         self.engineChanged.emit("pcm")
         self.errorOccurred.emit(
@@ -411,8 +466,12 @@ class AudioPlayer(QObject):
             self._pcm.play(self._frozen_t)
 
     def _on_finished(self) -> None:
+        self._play_requested = False
         self._frozen_t = (
-            self._duration if self._duration > 0 else self._pcm.position_s()
+            self._duration if self._duration > 0 else (self._pts() or 0.0)
         )
+        if self._duration <= 0 and self._frozen_t > 0:
+            self._duration = self._frozen_t
+            self.durationChanged.emit(self._duration)
         self.playbackChanged.emit(False)
         self.finished.emit()

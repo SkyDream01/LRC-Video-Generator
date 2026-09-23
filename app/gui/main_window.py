@@ -237,7 +237,7 @@ class MainWindow(QMainWindow):
         self.params_panel.paramsChanged.connect(pc.request_prepare)
         self.params_panel.restoreDefaultsRequested.connect(self._restore_defaults)
 
-        self.timeline.playToggled.connect(self._toggle_play_guarded)
+        self.timeline.playToggled.connect(self._toggle_play)
         self.timeline.scrubStarted.connect(self._on_scrub_start)
         self.timeline.scrubMoved.connect(self._on_scrub_moved)
         self.timeline.scrubFinished.connect(self._on_scrub_finished)
@@ -400,6 +400,8 @@ class MainWindow(QMainWindow):
         self.timeline.set_playing(playing)
         if playing:
             self.preview.set_exact_frame(None)
+        self.timeline.set_time(self.audio.position_s())
+        self.preview.update()
 
     def _on_player_duration(self, duration: float) -> None:
         if duration > 0:
@@ -410,9 +412,8 @@ class MainWindow(QMainWindow):
             return
         t = self.audio.position_s()
         duration = self.timeline.duration
-        if 0 < duration <= t:
-            self.audio.pause()
-            t = duration
+        if duration > 0:
+            t = min(t, duration)
         self.preview.update()
         self.timeline.set_time(t)
 
@@ -433,6 +434,7 @@ class MainWindow(QMainWindow):
     # ---------------------------------------------------------------- scrub
 
     def _on_scrub_start(self, t: float) -> None:
+        self.preview.set_exact_frame(None)
         self._scrub_was_playing = self.audio.is_playing()
         if self._scrub_was_playing:
             self.audio.pause()
@@ -469,6 +471,7 @@ class MainWindow(QMainWindow):
         if session is None:
             self.statusBar().showMessage("暂无可预览内容", 4000)
             return
+        self.audio.pause()
         t = self.audio.position_s()
         img = QImage(CANVAS_W, CANVAS_H, QImage.Format.Format_RGB32)
         img.fill(Qt.GlobalColor.black)

@@ -114,6 +114,131 @@ def test_audio_player_seek_preview_only(qapp):
     assert player.position_s() == 60.0
 
 
+@pytest.mark.parametrize("engine", ["qt", "pcm"])
+def test_audio_play_pause_finish_and_replay(qapp, tmp_path, engine):
+    import wave
+    from PySide6.QtMultimedia import QMediaDevices, QMediaPlayer
+    from app.core.encoder import find_binary
+
+    if not QMediaDevices.audioOutputs():
+        pytest.skip("实际播放测试需要音频输出设备")
+    if engine == "pcm" and not find_binary("ffmpeg"):
+        pytest.skip("PCM 回退测试需要 ffmpeg")
+
+    source = tmp_path / "preview.wav"
+    with wave.open(str(source), "wb") as stream:
+        stream.setparams((2, 2, 48000, 0, "NONE", ""))
+        stream.writeframes(b"\0" * (48000 * 4))
+    player = AudioPlayer()
+    states = []
+    ended = []
+    player.playbackChanged.connect(states.append)
+    player.finished.connect(lambda: ended.append(True))
+    try:
+        player.load(str(source))
+        assert _wait_until(lambda: player.duration_s() > 0, 3000)
+        if engine == "pcm":
+            player._on_qt_error(QMediaPlayer.Error.FormatError, "force fallback")
+        player.play()
+        assert _wait_until(lambda: True in states, 3000)
+        assert _wait_until(lambda: player.position_s() > 0.1, 3000)
+        player.pause()
+        assert states[-1] is False
+        frozen = player.position_s()
+        QTest.qWait(60)
+        assert player.position_s() == frozen
+        player.play()
+        assert _wait_until(lambda: bool(ended), 4000)
+        assert not player.is_playing()
+        assert player.position_s() == pytest.approx(1.0)
+        player.play()
+        assert _wait_until(player.is_playing, 3000)
+        assert player.position_s() < 0.5
+    finally:
+        player.stop()
+
+
+def test_decode_failure_preserves_play_request(qapp, monkeypatch):
+    from PySide6.QtMultimedia import QMediaPlayer
+
+    player = AudioPlayer()
+    player._source = "example.flac"
+    player._engine = "qt"
+    player._play_requested = True
+    player._frozen_t = 3.0
+    starts = []
+    monkeypatch.setattr(player._pcm, "play", starts.append)
+    player._on_qt_error(QMediaPlayer.Error.FormatError, "decoder failed")
+    assert player.engine == "pcm"
+    assert starts == [3.0]
+    player._on_position_changed(0)
+    assert player.position_s() == 3.0
+    player.stop()
+
+
+def test_pcm_finish_without_metadata_can_replay(qapp, monkeypatch):
+    player = AudioPlayer()
+    player._source = "example.flac"
+    player._engine = "pcm"
+    monkeypatch.setattr(player._pcm, "position_s", lambda: 8.0)
+    starts = []
+    monkeypatch.setattr(player._pcm, "play", starts.append)
+    player._on_finished()
+    assert player.duration_s() == 8.0
+    player.play()
+    assert starts == [0.0]
+    player.stop()
+
+
+def test_pcm_pause_seek_and_drain(qapp):
+    from app.gui.audio_player import AudioEnums, _PcmEngine
+
+    class Sink:
+        def processedUSecs(self):
+            return 2_000_000
+
+        def suspend(self):
+            pass
+
+        def resume(self):
+            pass
+
+        def stop(self):
+            pass
+
+        def deleteLater(self):
+            pass
+
+        def state(self):
+            return AudioEnums.State.IdleState
+
+    engine = _PcmEngine()
+    engine._source = "example.wav"
+    engine._sink = Sink()
+    engine._base_t = 5.0
+    engine._playing = True
+    engine.pause()
+    assert engine.position_s() == 7.0
+    engine.play()
+    assert engine.position_s() == 7.0
+    engine.pause()
+    engine.seek(4.0)
+    assert not engine.is_playing()
+    assert engine.position_s() == 4.0
+
+    ended = []
+    engine.finished.connect(lambda: ended.append(True))
+    engine._sink = Sink()
+    engine._io = object()
+    engine._playing = True
+    engine._flush()
+    assert not ended  # 缺数据不等于播放结束
+    engine._decoded = True
+    engine._flush()
+    assert ended == [True]
+    assert engine.position_s() == 6.0
+
+
 # ---------------------------------------------------------------- 参数面板
 
 
@@ -404,6 +529,18 @@ def test_main_window_smoke(qapp, tmp_path):
     win._exact_preview()
     assert win.preview._exact_frame is not None
     assert win.preview._exact_frame.width() == 1920
+
+    # 点击播放不受参数输入框焦点影响；播放时退出精确静帧。
+    win.params_panel._size_main.setFocus()
+    win.timeline._btn.click()
+    assert _wait_until(win.audio.is_playing, 3000)
+    assert win.timeline._playing
+    assert win.preview._exact_frame is None
+    win._exact_preview()
+    assert not win.audio.is_playing()
+    win._on_scrub_start(3.0)
+    assert win.preview._exact_frame is None
+    win._on_scrub_finished(3.0)
 
     # 参数面板改字号 → 防抖 prepare → 新 session（assets 更新）
     win.params_panel._size_main.setValue(120)
