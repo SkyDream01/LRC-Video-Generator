@@ -250,6 +250,7 @@ class MainWindow(QMainWindow):
         self.input_panel.loadDemoRequested.connect(self._load_demo)
 
         self.params_panel.paramsChanged.connect(pc.request_prepare)
+        self.params_panel.paramsChanged.connect(self._refresh_encoder_label)
         self.params_panel.restoreDefaultsRequested.connect(self._restore_defaults)
 
         self.timeline.playToggled.connect(self._toggle_play)
@@ -279,6 +280,7 @@ class MainWindow(QMainWindow):
         ec = self.export_ctrl
         ec.exportStarted.connect(self._on_export_started)
         ec.exportProgress.connect(self._on_export_progress)
+        ec.exportEncoderChanged.connect(self._on_export_encoder_changed)
         ec.exportFinished.connect(self._on_export_finished)
         ec.exportCancelled.connect(self._on_export_cancelled)
         ec.exportFailed.connect(self._on_export_failed)
@@ -290,6 +292,7 @@ class MainWindow(QMainWindow):
         for key in ("audio", "cover", "lrc", "background"):
             self.input_panel.set_media_path(key, getattr(p.files, key))
         self.params_panel.bind(p)
+        self._refresh_encoder_label()
         name = (
             f" · {self.project_ctrl.kproj_path.name}"
             if self.project_ctrl.kproj_path
@@ -530,6 +533,7 @@ class MainWindow(QMainWindow):
         )
 
     def _on_export_started(self) -> None:
+        self._encoder_label.setText("导出编码器: 准备中…")
         now = monotonic()
         self._export_timing = ExportTiming(
             now, self.project_ctrl.project.output.fps, now
@@ -555,6 +559,9 @@ class MainWindow(QMainWindow):
         self._progress.setValue(done)
         self._progress.setFormat(f"%p% ({done}/{total} 帧)")
 
+    def _on_export_encoder_changed(self, name: str) -> None:
+        self._encoder_label.setText(f"导出编码器: {name}")
+
     def _refresh_export_timing(self) -> None:
         timing = self._export_timing
         if timing is None:
@@ -577,6 +584,7 @@ class MainWindow(QMainWindow):
             speed = result.frames / result.fps / elapsed if elapsed > 0 else 0.0
             summary = f"\n渲染时间 {format_time(elapsed)} · 平均渲染倍数 {speed:.2f}×"
         self._reset_export_ui()
+        self._encoder_label.setText(f"已完成编码器: {result.encoder}")
         self.statusBar().showMessage(
             f"导出完成: {result.output}（{result.encoder} · {result.frames} 帧）", 10000
         )
@@ -598,6 +606,7 @@ class MainWindow(QMainWindow):
     def _reset_export_ui(self) -> None:
         self._export_timer.stop()
         self._export_timing = None
+        self._refresh_encoder_label()
         self._export_metrics.hide()
         self._engine_label.show()
         self._fps_label.show()
@@ -633,7 +642,7 @@ class MainWindow(QMainWindow):
         self._probe_worker = EncoderProbeWorker(self)
         self._probe_worker.probed.connect(self._on_encoder_probed)
         self._probe_worker.unavailable.connect(
-            lambda: self._encoder_label.setText("编码器: 探测失败（导出走 libx264）")
+            lambda: self._on_encoder_probed("libx264")
         )
         self._probe_worker.finished.connect(self._on_probe_finished)
         self._probe_worker.start()
@@ -645,7 +654,17 @@ class MainWindow(QMainWindow):
 
     def _on_encoder_probed(self, name: str) -> None:
         self.export_ctrl.probed_encoder = name
-        self._encoder_label.setText(f"编码器: {name}")
+        self._refresh_encoder_label()
+
+    def _refresh_encoder_label(self) -> None:
+        if self.export_ctrl.is_running or self._export_timing is not None:
+            return
+        name = self.project_ctrl.project.output.encoder
+        if name == "auto":
+            detected = self.export_ctrl.probed_encoder or "探测中…"
+            self._encoder_label.setText(f"自动编码器: {detected}")
+        else:
+            self._encoder_label.setText(f"已选编码器: {name}")
 
     # ---------------------------------------------------------------- 其他
 

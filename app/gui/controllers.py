@@ -148,6 +148,7 @@ class ExportController(QObject):
 
     exportStarted = Signal()
     exportProgress = Signal(int, int)
+    exportEncoderChanged = Signal(str)
     exportFinished = Signal(object)  # ExportResult
     exportCancelled = Signal()
     exportFailed = Signal(str)
@@ -170,6 +171,7 @@ class ExportController(QObject):
         snapshot = deepcopy(project)
         worker = ExportWorker(snapshot, base_dir, output, encoder_override)
         worker.progress.connect(self.exportProgress)
+        worker.encoderChanged.connect(self.exportEncoderChanged)
         worker.succeeded.connect(self._on_finished)
         worker.cancelled.connect(self._on_cancelled)
         worker.failed.connect(self._on_failed)

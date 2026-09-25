@@ -102,6 +102,7 @@ def render_video(
     max_frames: int | None = None,
     progress: ProgressCallback | None = None,
     cancel: CancelCallback | None = None,
+    encoder_changed: Callable[[str], None] | None = None,
 ) -> ExportResult:
     """渲染工程到 MP4。
 
@@ -148,6 +149,8 @@ def render_video(
     encoder_name = normalize_encoder(encoder_name)
 
     def run_once(enc: str) -> None:
+        if encoder_changed is not None:
+            encoder_changed(enc)
         temp_output = _new_temp_output(output)
         try:
             command = build_encode_command(

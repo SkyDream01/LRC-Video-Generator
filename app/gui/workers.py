@@ -69,6 +69,7 @@ class ExportWorker(QThread):
     """
 
     progress = Signal(int, int)
+    encoderChanged = Signal(str)
     succeeded = Signal(object)  # ExportResult
     cancelled = Signal()
     failed = Signal(str)
@@ -103,6 +104,7 @@ class ExportWorker(QThread):
                 encoder_override=self._encoder_override,
                 progress=lambda done, total: self.progress.emit(done, total),
                 cancel=self._cancel_event.is_set,
+                encoder_changed=self.encoderChanged.emit,
             )
         except ExportCancelled:
             self.cancelled.emit()

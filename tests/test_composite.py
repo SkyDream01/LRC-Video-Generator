@@ -20,13 +20,13 @@ from app.gui.composite import (  # noqa: E402
 )
 
 
-def _make_scene(lrc: str, anims: dict[str, str] | None = None):
+def _make_scene(lrc: str, anims: dict[str, str] | None = None, *, duration: float = 10.0):
     from PIL import Image
 
     project = KProj()
     for kind, anim_type in (anims or {}).items():
         getattr(project.animations, kind).type = anim_type
-    ctx = build_context(project, ".", lrc_text=lrc, duration_override=10.0)
+    ctx = build_context(project, ".", lrc_text=lrc, duration_override=duration)
     ctx.cover = Image.new("RGB", (256, 256), (200, 60, 60))
     scene = Scene(ctx)
     scene.prepare()
@@ -118,18 +118,79 @@ def test_word_highlight_pixels_progress_and_match_plain_at_end():
                                       complete[y:y+int(seg.h), x:x+int(seg.w)])
 
 
-def test_wrapped_word_highlight_finishes_first_row_before_second():
+@pytest.mark.parametrize("animation", ["fade", "scroll_list"])
+@pytest.mark.parametrize("scale", [1.0, 0.5])
+@pytest.mark.parametrize("tags", [
+    "<00:02>A<00:04>B<00:06>",
+    "<00:02>A<00:06>B<00:03>C<00:06>",
+])
+def test_word_timestamps_reach_preview_and_export_pixels(animation, scale, tags, monkeypatch):
+    """真实 LRC → prepare → SceneState → 合成；不手工注入逐字进度。"""
+    scene, gui = _make_scene(
+        f"[00:01]{tags}\n[00:01]Translation\n[00:08]Next line",
+        {"lyrics": animation},
+    )
+    gui.bg_image = None
+    gui.cover_face = None
+    gui.meta_segments = []
+
+    def no_rasterization(*args, **kwargs):
+        pytest.fail("逐帧合成不得重新光栅化歌词")
+
+    monkeypatch.setattr("app.core.prepare.rasterize_text", no_rasterization)
+
+    def frame(t, fmt):
+        image = QImage(round(1920 * scale), round(1080 * scale), fmt)
+        image.fill(Qt.GlobalColor.black)
+        painter = QPainter(image)
+        try:
+            painter.scale(scale, scale)
+            transform = painter.transform()
+            composite(painter, scene.eval(t), gui)
+            assert painter.transform() == transform
+            assert painter.opacity() == 1
+            assert not painter.hasClipping()
+        finally:
+            painter.end()
+        return qimage_to_rgb_array(image.convertToFormat(QImage.Format.Format_RGB888))
+
+    frames = []
+    for t in (1.5, 3.5, 5, 7):
+        preview = frame(t, QImage.Format.Format_RGB888)
+        exported = frame(t, QImage.Format.Format_RGB32)
+        diff = np.abs(preview.astype(int) - exported.astype(int))
+        assert diff.max() <= 8
+        assert diff.mean() < 0.1
+        frames.append(exported)
+    item = next(item for item in scene.eval(3.5).lyrics.items if item.current)
+    main, sub, sub_offset = gui.lyric_lines[item.index]
+
+    def region(arr, seg, offset=0):
+        x = round((item.x + seg.ox) * scale)
+        y = round((item.y + offset + seg.oy) * scale)
+        return arr[y:y+round(seg.h * scale), x:x+round(seg.w * scale)]
+
+    brightness = [sum(int(region(arr, seg).sum()) for seg in main) for arr in frames]
+    assert all(a < b for a, b in zip(brightness, brightness[1:]))
+    for seg in sub:
+        np.testing.assert_array_equal(region(frames[0], seg, sub_offset),
+                                      region(frames[-1], seg, sub_offset))
+    np.testing.assert_array_equal(frames[1], frame(3.5, QImage.Format.Format_RGB32))
+
+
+@pytest.mark.parametrize("animation", ["fade", "scroll_list"])
+def test_wrapped_word_highlight_finishes_first_row_before_second(animation):
     from dataclasses import replace
 
     text = "聪明的你告诉我什么是真理" * 4
     lrc = "[00:01]" + "".join(f"<00:{i + 1:02d}>{char}" for i, char in enumerate(text))
-    scene, gui = _make_scene(lrc)
-    state = scene.eval(3)
-    item = state.lyrics.items[0]
+    scene, gui = _make_scene(lrc, {"lyrics": animation}, duration=len(text) + 3)
     main, _, _ = gui.lyric_lines[0]
     assert len(main) == 2
-    first_done = replace(item, word_progress=float(main[1].char_start))
-    result = qimage_to_rgb_array(_render(replace(state, lyrics=replace(state.lyrics, items=(first_done,))), gui))
+    state = scene.eval(1 + main[1].char_start)
+    item = state.lyrics.items[0]
+    assert item.word_progress == main[1].char_start
+    result = qimage_to_rgb_array(_render(state, gui))
     plain = qimage_to_rgb_array(_render(replace(state, lyrics=replace(state.lyrics, items=(replace(item, word_progress=None),))), gui))
     for index, seg in enumerate(main):
         x, y = round(item.x + seg.ox), round(item.y + seg.oy)

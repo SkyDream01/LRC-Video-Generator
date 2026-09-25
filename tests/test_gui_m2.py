@@ -498,6 +498,65 @@ def test_timeline_time_label_and_playing_state(qapp):
 # ---------------------------------------------------------------- 主窗口冒烟
 
 
+@pytest.mark.parametrize("selected", ["libx264", "h264_amf", "h264_qsv", "h264_nvenc", "auto"])
+def test_encoder_selection_reaches_export_worker(qapp, monkeypatch, tmp_path, selected):
+    from app.gui import controllers, exporter
+    from app.gui.panels.params_panel import ParamsPanel
+
+    panel = ParamsPanel()
+    project = KProj()
+    panel.bind(project)
+    panel._encoder.setCurrentIndex(panel._encoder.findData(selected))
+    ctrl = controllers.ExportController()
+    ctrl.probed_encoder = "h264_nvenc"
+    monkeypatch.setattr(controllers.ExportWorker, "start", lambda self: None)
+    received = []
+    ctrl.exportEncoderChanged.connect(received.append)
+
+    def fake_render(snapshot, base_dir, output, **kwargs):
+        assert snapshot.output.encoder == selected
+        assert kwargs["encoder_override"] == ("h264_nvenc" if selected == "auto" else None)
+        kwargs["encoder_changed"](kwargs["encoder_override"] or snapshot.output.encoder)
+        return object()
+
+    monkeypatch.setattr(exporter, "render_video", fake_render)
+    failures = []
+    ctrl.exportFailed.connect(failures.append)
+    ctrl.start(project, tmp_path, tmp_path / "out.mp4")
+    worker = ctrl._worker
+    project.output.encoder = "auto"  # 导出快照不能被后续修改覆盖。
+    worker.run()
+    assert not failures
+    assert received == ["h264_nvenc" if selected == "auto" else selected]
+    panel.close()
+
+
+def test_encoder_label_tracks_selection_and_export(qapp, monkeypatch):
+    from app.gui import main_window
+
+    monkeypatch.setattr(main_window.MainWindow, "_start_encoder_probe", lambda self: None)
+    win = main_window.MainWindow()
+    try:
+        win._on_encoder_probed("h264_nvenc")
+        assert win._encoder_label.text() == "自动编码器: h264_nvenc"
+        combo = win.params_panel._encoder
+        combo.setCurrentIndex(combo.findData("libx264"))
+        assert win._encoder_label.text() == "已选编码器: libx264"
+        win._on_export_started()
+        win.export_ctrl.exportEncoderChanged.emit("libx264")
+        win._on_encoder_probed("h264_nvenc")
+        combo.setCurrentIndex(combo.findData("h264_amf"))
+        assert win._encoder_label.text() == "导出编码器: libx264"
+        win.export_ctrl.exportEncoderChanged.emit("h264_amf")
+        win.export_ctrl.exportEncoderChanged.emit("libx264")
+        assert win._encoder_label.text() == "导出编码器: libx264"
+        win._on_export_cancelled()
+        assert win._encoder_label.text() == "已选编码器: h264_amf"
+    finally:
+        win.project_ctrl._debounce.stop()
+        win.close()
+
+
 def test_export_timing_lifecycle(qapp, monkeypatch):
     from types import SimpleNamespace
     from app.gui import main_window

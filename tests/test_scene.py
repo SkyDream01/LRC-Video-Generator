@@ -112,3 +112,28 @@ def test_word_timing_missing_end_and_zero_duration():
 def test_duration_fallback_includes_word_timestamps():
     ctx = build_context(KProj(), ".", lrc_text="[00:01]<00:01>A<00:10>B<00:15>")
     assert ctx.duration == 15
+
+
+@pytest.mark.parametrize("animation", ["fade", "scroll_list"])
+def test_word_timing_recovers_after_out_of_order_tag(animation):
+    project = KProj()
+    project.animations.lyrics.type = animation
+    ctx = build_context(project, ".", lrc_text=(
+        "[00:01]<00:02>A<00:06>B<00:03>C<00:05>\n"
+        "[00:08]<00:09>D<00:10>"
+    ), duration_override=12)
+    scene = Scene(ctx)
+    scene.prepare()
+    assets = ctx.assets["lyrics"]
+    for t, expected in [(1.5, 0), (4, 2.5), (7, 3), (4, 2.5)]:
+        state = scene.eval(t)
+        current = next(item for item in state.lyrics.items if item.current)
+        assert current.word_progress == pytest.approx(expected)
+        assert ctx.assets["lyrics"] is assets
+        if animation == "scroll_list":
+            future = next(item for item in state.lyrics.items if item.index == 1)
+            assert future.word_progress == 0
+            assert future.opacity < current.opacity
+    if animation == "scroll_list":
+        previous = next(item for item in scene.eval(9.5).lyrics.items if item.index == 0)
+        assert previous.word_progress == 3

@@ -137,7 +137,8 @@ def apply_word_timing(state: LyricsState, t: float, ctx: RenderContext) -> Lyric
         progress = float(line.words[0].char_start)
         for word in line.words:
             if t < word.start:
-                break
+                # 解析器容忍逆序词时间；未来的词不能遮蔽后面已经到时的词。
+                continue
             end = word.end if word.end is not None else ctx.intervals[item.index][1]
             fraction = clamp((t - word.start) / (end - word.start)) if end > word.start else 1.0
             progress = max(progress, word.char_start + (word.char_end - word.char_start) * fraction)
