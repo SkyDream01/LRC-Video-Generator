@@ -109,3 +109,16 @@ def test_default_output_name_uses_mkv(audio, expected):
 
     assert default_output_name(audio) == expected
     assert default_output_name(audio, ".mp4") == expected.replace(".mkv", ".mp4")
+
+
+@pytest.mark.parametrize("container", ["mkv", "mp4"])
+def test_output_container_round_trip(tmp_path, container):
+    project = KProj()
+    project.output.container = container
+    path = save_kproj(project, tmp_path / "video.kproj")
+    assert load_kproj(path).output.container == container
+
+
+@pytest.mark.parametrize("output", [{}, {"container": "unknown"}, {"container": None}])
+def test_output_container_defaults_to_mkv(output):
+    assert kproj_from_dict({"output": output}).output.container == "mkv"

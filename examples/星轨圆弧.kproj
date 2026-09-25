@@ -42,6 +42,7 @@
     "layout_preset": "landscape_mv",
     "encoder": "auto",
     "video_bitrate": "12M",
+    "container": "mkv",
     "audio_bitrate": "320k",
     "show_metadata": true
   },

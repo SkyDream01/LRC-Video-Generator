@@ -156,6 +156,8 @@ class ParamsPanel(QWidget):
         self._fps = QComboBox(self)
         self._encoder = QComboBox(self)
         self._vbitrate = QComboBox(self)
+        self._container = QComboBox(self)
+        self._audio_mode = QLabel(self)
         self._abitrate = QComboBox(self)
         self._show_meta = QCheckBox("画面叠加「标题 − 艺术家」", self)
 
@@ -281,6 +283,8 @@ class ParamsPanel(QWidget):
         form.setLabelAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
+        self._container.addItem("MKV", "mkv")
+        self._container.addItem("MP4", "mp4")
         self._fps.addItem("60 fps", 60)
         self._fps.addItem("30 fps", 30)
         for label, value in _ENCODER_ITEMS:
@@ -299,11 +303,15 @@ class ParamsPanel(QWidget):
             control.setSuffix(" px")
             control.setToolTip("负数向左，正数向右；超出画布时停在边缘。")
             form.addRow(label, control)
+        form.addRow("封装格式", self._container)
         form.addRow("帧率", self._fps)
         form.addRow("编码器", self._encoder)
         form.addRow("视频码率", self._vbitrate)
         self._abitrate.setToolTip("仅 MP4 转码使用；MKV 直接保留原始音频")
-        form.addRow("音频码率（MP4）", self._abitrate)
+        form.addRow("音频处理", self._audio_mode)
+        self._abitrate.setPlaceholderText("保留原始码率")
+        form.addRow("音频码率", self._abitrate)
+        self._sync_output_audio_ui()
         form.addRow(self._show_meta)
         return w
 
@@ -327,6 +335,7 @@ class ParamsPanel(QWidget):
         self._layout.currentIndexChanged.connect(self._on_output_changed)
         self._cover_x.valueChanged.connect(self._on_output_changed)
         self._lyrics_x.valueChanged.connect(self._on_output_changed)
+        self._container.currentIndexChanged.connect(self._on_output_changed)
         self._fps.currentIndexChanged.connect(self._on_output_changed)
         self._encoder.currentIndexChanged.connect(self._on_output_changed)
         self._vbitrate.editTextChanged.connect(self._on_output_changed)
@@ -376,6 +385,7 @@ class ParamsPanel(QWidget):
         enc = self._encoder.currentData()
         if enc:
             p.output.encoder = str(enc)
+        p.output.container = self._container.currentData()
         p.output.video_bitrate = self._vbitrate.currentText().strip() or "12M"
         ab = self._abitrate.currentText().strip()
         if ab:
@@ -384,7 +394,23 @@ class ParamsPanel(QWidget):
         p.output.cover_offset_x = self._cover_x.value()
         p.output.lyrics_offset_x = self._lyrics_x.value()
         p.output.show_metadata = self._show_meta.isChecked()
+        self._sync_output_audio_ui()
         self.paramsChanged.emit()
+
+    def _sync_output_audio_ui(self) -> None:
+        copy_audio = self._container.currentData() == "mkv"
+        self._audio_mode.setText("原始音频（不转码）" if copy_audio else "AAC 转码（48 kHz）")
+        self._abitrate.setEnabled(not copy_audio)
+        with _blocked(self._abitrate):
+            if copy_audio:
+                self._abitrate.setCurrentIndex(-1)
+            else:
+                bitrate = self._project.output.audio_bitrate if self._project else "320k"
+                index = self._abitrate.findText(bitrate)
+                if index < 0:
+                    self._abitrate.addItem(bitrate)
+                    index = self._abitrate.findText(bitrate)
+                self._abitrate.setCurrentIndex(index)
 
     def _on_anim_type_changed(self, kind: str, type_key: Any) -> None:
         p = self._project
@@ -527,6 +553,7 @@ class ParamsPanel(QWidget):
             self._layout,
             self._cover_x,
             self._lyrics_x,
+            self._container,
             self._fps,
             self._encoder,
             self._vbitrate,
@@ -554,6 +581,7 @@ class ParamsPanel(QWidget):
             self._layout.setCurrentIndex(max(0, self._layout.findData(project.output.layout_preset)))
             self._cover_x.setValue(project.output.cover_offset_x)
             self._lyrics_x.setValue(project.output.lyrics_offset_x)
+            self._container.setCurrentIndex(max(0, self._container.findData(project.output.container)))
             self._fps.setCurrentIndex(max(0, self._fps.findData(project.output.fps)))
             self._encoder.setCurrentIndex(
                 max(0, self._encoder.findData(project.output.encoder))
@@ -575,5 +603,6 @@ class ParamsPanel(QWidget):
                     max(0, combo.findData(getattr(project.animations, kind).type))
                 )
             self._rebuild_anim_params(kind)
+        self._sync_output_audio_ui()
         self._set_color_controls_enabled(not project.colors.auto_extract)
         self.set_palette_preview(None)

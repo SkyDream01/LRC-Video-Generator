@@ -54,7 +54,7 @@ def cmd_export(args: argparse.Namespace) -> int:
     output = (
         Path(args.output)
         if args.output
-        else Path(default_output_name(project.files.audio))
+        else Path(default_output_name(project.files.audio, f".{project.output.container}"))
     )
     output.parent.mkdir(parents=True, exist_ok=True)
 
@@ -80,7 +80,7 @@ def cmd_demo(args: argparse.Namespace) -> int:
     work_dir = Path(args.dir)
     project, kproj_path = make_demo_project(work_dir)
     _apply_overrides(project, args)
-    output = Path(args.output) if args.output else work_dir / "demo.mkv"
+    output = Path(args.output) if args.output else work_dir / f"demo.{project.output.container}"
     output.parent.mkdir(parents=True, exist_ok=True)
 
     print(f"演示工程: {kproj_path}")

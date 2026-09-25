@@ -682,3 +682,63 @@ def test_custom_layout_controls(qapp):
     assert len(changes) == 3
     assert panel._cover_x.value() == -50
     panel.close()
+
+
+def test_output_container_controls_audio_settings(qapp):
+    from app.gui.panels.params_panel import ParamsPanel
+
+    project = KProj()
+    project.output.audio_bitrate = "256k"
+    panel = ParamsPanel()
+    changes = []
+    panel.paramsChanged.connect(lambda: changes.append(True))
+    panel.bind(project)
+    assert not changes
+    assert panel._container.currentData() == "mkv"
+    assert panel._audio_mode.text() == "原始音频（不转码）"
+    assert not panel._abitrate.isEnabled()
+    assert panel._abitrate.currentIndex() == -1
+    assert panel._abitrate.placeholderText() == "保留原始码率"
+
+    panel._container.setCurrentIndex(panel._container.findData("mp4"))
+    assert project.output.container == "mp4"
+    assert panel._abitrate.isEnabled()
+    assert panel._abitrate.currentText() == "256k"
+    panel._abitrate.setCurrentIndex(panel._abitrate.findText("320k"))
+    assert project.output.audio_bitrate == "320k"
+    panel._container.setCurrentIndex(panel._container.findData("mkv"))
+    assert project.output.container == "mkv"
+    assert not panel._abitrate.isEnabled()
+    assert project.output.audio_bitrate == "320k"
+    panel._container.setCurrentIndex(panel._container.findData("mp4"))
+    assert panel._abitrate.currentText() == "320k"
+    changes.clear()
+    panel.bind(project)
+    assert not changes
+    assert panel._container.currentData() == "mp4"
+    assert panel._abitrate.isEnabled()
+    panel.close()
+
+
+@pytest.mark.parametrize("container", ["mkv", "mp4"])
+def test_export_dialog_uses_output_container(qapp, monkeypatch, tmp_path, container):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from app.gui import main_window
+
+    project = KProj()
+    project.files.audio = "song.flac"
+    project.output.container = container
+    dialog = Mock(return_value=(str(tmp_path / "video"), ""))
+    monkeypatch.setattr(main_window.QFileDialog, "getSaveFileName", dialog)
+    window = SimpleNamespace(
+        export_ctrl=SimpleNamespace(is_running=False, start=Mock()),
+        preview=SimpleNamespace(session=lambda: object()),
+        project_ctrl=SimpleNamespace(
+            project=project, base_dir=tmp_path, has_audio=True, has_lrc=True,
+        ),
+    )
+    main_window.MainWindow._on_export_button(window)
+    assert dialog.call_args.args[2] == f"song.{container}"
+    assert f"(*.{container})" in dialog.call_args.args[3]
+    assert window.export_ctrl.start.call_args.args[2] == tmp_path / f"video.{container}"

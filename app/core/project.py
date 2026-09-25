@@ -88,6 +88,7 @@ class OutputSpec:
     lyrics_offset_x: int = 0
     encoder: str = "auto"
     video_bitrate: str = "12M"
+    container: str = "mkv"
     audio_bitrate: str = "320k"
     show_metadata: bool = True
 
@@ -236,6 +237,11 @@ def kproj_from_dict(data: dict) -> KProj:
         encoder=_string(output_raw.get("encoder"), output_default.encoder),
         video_bitrate=_string(
             output_raw.get("video_bitrate"), output_default.video_bitrate
+        ),
+        container=(
+            output_raw.get("container")
+            if output_raw.get("container") in ("mkv", "mp4")
+            else output_default.container
         ),
         audio_bitrate=_string(
             output_raw.get("audio_bitrate"), output_default.audio_bitrate

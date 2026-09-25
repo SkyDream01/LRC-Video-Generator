@@ -136,7 +136,7 @@ class MainWindow(QMainWindow):
     def _build_status_bar(self) -> None:
         self._export_btn = QPushButton("导出视频")
         self._export_btn.setObjectName("exportButton")
-        self._export_btn.setToolTip("导出 1920×1080 MKV（Ctrl+E）")
+        self._export_btn.setToolTip("按输出参数导出 1920×1080 视频（Ctrl+E）")
         self._export_btn.clicked.connect(self._on_export_button)
 
         self._progress = QProgressBar()
@@ -520,14 +520,17 @@ class MainWindow(QMainWindow):
                 missing.append("LRC 歌词")
             self.statusBar().showMessage(f"缺少 {' 和 '.join(missing)}，无法导出", 6000)
             return
-        suggested = default_output_name(self.project_ctrl.project.files.audio)
-        path, selected_filter = QFileDialog.getSaveFileName(
-            self, "导出视频", suggested, "MKV（原始音频） (*.mkv);;MP4（AAC 音频） (*.mp4)"
+        project = self.project_ctrl.project
+        suffix = f".{project.output.container}"
+        suggested = default_output_name(project.files.audio, suffix)
+        file_filter = "MKV（原始音频） (*.mkv)" if suffix == ".mkv" else "MP4（AAC 音频） (*.mp4)"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "导出视频", suggested, file_filter
         )
         if not path:
             return
-        if not path.lower().endswith((".mkv", ".mp4")):
-            path += ".mp4" if selected_filter.startswith("MP4") else ".mkv"
+        if not path.lower().endswith(suffix):
+            path += suffix
         self.export_ctrl.start(
             self.project_ctrl.project, self.project_ctrl.base_dir, Path(path)
         )

@@ -429,7 +429,7 @@ PCM 回退路径: 主时钟用已写入 QAudioSink 的帧数，不用 QMediaPlay
 | 封装 | MKV（Matroska） |
 | 时长 | `N = round(duration * fps)` 帧 + `-frames:v N` + `-shortest` 双保险 |
 
-默认导出 MKV，直接封装原始音频流，保留源编码、采样率与声道，不进行有损转码。显式选择 `.mp4` 输出时沿用 AAC 转码（工程中的 `audio_bitrate`、48 kHz）与 `+faststart`。
+输出面板的“封装格式”默认选择 MKV，“音频处理”显示原始音频且音频码率禁用；切换 MP4 后启用 AAC 码率。封装格式保存到工程的 `output.container`，旧工程缺省为 MKV，命令行显式输出后缀可覆盖工程选择。默认导出 MKV，直接封装原始音频流，保留源编码、采样率与声道，不进行有损转码。显式选择 `.mp4` 输出时沿用 AAC 转码（工程中的 `audio_bitrate`、48 kHz）与 `+faststart`。
 
 **编码命令示例（软件兜底）：**
 
@@ -505,6 +505,7 @@ Python 侧直接传递 QImage RGB32 内存视图，由 FFmpeg 的原生 scale/fi
     "layout_preset": "landscape_mv",
     "encoder": "auto",
     "video_bitrate": "12M",
+    "container": "mkv",
     "audio_bitrate": "320k",
     "show_metadata": true
   }

@@ -117,7 +117,7 @@ def render_video(
         raise ValueError("工程未配置音频文件，无法导出")
     output = Path(output_path)
     if not output.suffix:
-        output = output.with_suffix(".mkv")
+        output = output.with_suffix(f".{project.output.container}")
     if max_frames is not None and max_frames < 1:
         raise ValueError("max_frames 必须为正整数")
     if cancel is not None and cancel():
