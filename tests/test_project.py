@@ -101,3 +101,11 @@ def test_resolve_media_relative_then_absolute(tmp_path):
     assert resolve_media(project, tmp_path / "elsewhere", "audio") is not None
     project.files.audio = "missing.flac"
     assert resolve_media(project, tmp_path, "audio") is None
+
+
+@pytest.mark.parametrize("audio, expected", [("song.flac", "song.mkv"), (None, "output.mkv")])
+def test_default_output_name_uses_mkv(audio, expected):
+    from app.core.project import default_output_name
+
+    assert default_output_name(audio) == expected
+    assert default_output_name(audio, ".mp4") == expected.replace(".mkv", ".mp4")

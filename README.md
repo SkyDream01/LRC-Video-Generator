@@ -1,6 +1,6 @@
 # LRC Video Generator — LRC Video Maker
 
-LRC Video Generator 把音频、LRC 歌词和封面合成为动态歌词视频。默认输出为 1920×1080、60 fps 的 MP4，预览和导出使用同一套场景状态与 QPainter 合成逻辑。
+LRC Video Generator 把音频、LRC 歌词和封面合成为动态歌词视频。默认输出为 1920×1080、60 fps 的 MKV，预览和导出使用同一套场景状态与 QPainter 合成逻辑。
 
 LRC Video Generator 面向两类使用方式：
 
@@ -50,10 +50,10 @@ ffmpeg/ffprobe.exe       # 可选；缺少时回退到 mutagen 读取时长
 python main.py demo --dir output/demo
 ```
 
-生成目录包含 `demo.wav`、`demo_cover.png`、`demo.lrc`、`demo.kproj` 和 `demo.mp4`。想先做快速冒烟检查，可限制帧数：
+生成目录包含 `demo.wav`、`demo_cover.png`、`demo.lrc`、`demo.kproj` 和 `demo.mkv`。想先做快速冒烟检查，可限制帧数：
 
 ```bash
-python main.py demo --dir output/demo --frames 60 --output output/demo/smoke.mp4
+python main.py demo --dir output/demo --frames 60 --output output/demo/smoke.mkv
 ```
 
 `--frames` 是调试选项，会让视频只编码指定帧数，不适合正式出片。
@@ -64,7 +64,7 @@ python main.py demo --dir output/demo --frames 60 --output output/demo/smoke.mp4
 python main.py gui
 ```
 
-在“素材”面板选择音频和 LRC；封面、背景图均可选。资源准备完成后，使用“参数”面板调整效果，按 `Ctrl+E` 导出 MP4。
+在“素材”面板选择音频和 LRC；封面、背景图均可选。资源准备完成后，使用“参数”面板调整效果，按 `Ctrl+E` 导出 MKV。
 
 ## 支持范围
 
@@ -77,7 +77,7 @@ python main.py gui
 | 歌词动画 | 淡入淡出、滚动列表、滑入滑出、横向揭幕 |
 | 封面动画 | 静态展示、黑胶唱片旋转、呼吸缩放、悬浮 |
 | 工程 | UTF-8 JSON `.kproj`，当前版本 v1.1 |
-| 视频 | H.264 / AAC / MP4，默认 1920×1080 @ 60 fps |
+| 视频 | H.264 / 原始音频 / MKV，默认 1920×1080 @ 60 fps |
 
 Enhanced LRC 自动按 `<时间戳>文字` 逐字/逐词提亮，可与所有歌词动画叠加，预览与导出效果一致。例如：
 
@@ -92,13 +92,13 @@ Enhanced LRC 自动按 `<时间戳>文字` 逐字/逐词提亮，可与所有歌
 ### 使用工程文件
 
 ```bash
-python main.py export --kproj path/to/project.kproj --output path/to/result.mp4
+python main.py export --kproj path/to/project.kproj --output path/to/result.mkv
 ```
 
 ### 直接使用素材
 
 ```bash
-python main.py export --audio path/to/music.flac --lrc path/to/lyrics.lrc --cover path/to/cover.jpg --background path/to/background.jpg --output path/to/result.mp4
+python main.py export --audio path/to/music.flac --lrc path/to/lyrics.lrc --cover path/to/cover.jpg --background path/to/background.jpg --output path/to/result.mkv
 ```
 
 直接出片至少需要 `--audio` 和 `--lrc`；封面和背景可省略。常用覆盖参数：
@@ -109,9 +109,9 @@ python main.py export --audio path/to/music.flac --lrc path/to/lyrics.lrc --cove
 | `--encoder` | `auto`、`h264_nvenc`、`h264_amf`、`h264_qsv`、`libx264` |
 | `--duration` | 用秒数覆盖自动探测的时长 |
 | `--frames` | 限制编码帧数，仅建议调试使用 |
-| `--output` | 输出 MP4 路径；省略时按音频文件名生成 |
+| `--output` | 输出路径（默认 MKV，也支持 MP4）；省略时按音频文件名生成 |
 
-`auto` 会按 NVENC → AMF → QSV → libx264 顺序进行可用性探测；硬件编码启动或写帧失败时会重跑 `libx264`。编码过程写入输出目录下的临时 MP4，成功后才替换目标文件。
+`auto` 会按 NVENC → AMF → QSV → libx264 顺序进行可用性探测；硬件编码启动或写帧失败时会重跑 `libx264`。编码过程写入输出目录下的临时文件（与目标封装一致），成功后才替换目标文件。
 
 ## GUI 操作要点
 
@@ -131,8 +131,10 @@ python main.py export --audio path/to/music.flac --lrc path/to/lyrics.lrc --cove
 | 帧率 | 60 fps |
 | 视频 | H.264 High Profile；硬件编码自动回退到 `libx264` |
 | 颜色 | `yuv420p`、BT.709、tv range |
-| 音频 | AAC-LC，320 kbps，48 kHz，立体声 |
-| 封装 | MP4，`+faststart` |
+| 音频 | 直接复制原始音频流（`-c:a copy`），不转码、不重采样 |
+| 封装 | MKV（Matroska） |
+
+默认导出 MKV，直接封装原始音频流，保留源编码、采样率与声道，不进行有损转码。显式选择 `.mp4` 输出时沿用 AAC 转码（工程中的 `audio_bitrate`、48 kHz）与 `+faststart`。
 
 GUI 当前只提供 `landscape_mv` 布局；宽高字段保存在工程格式中，但不在参数面板单独编辑。手动修改工程宽高时必须使用偶数，否则 YUV420P 导出会被拒绝。
 
@@ -232,7 +234,7 @@ Set-Location $env:TEMP
 & "$bundle\ffmpeg\ffprobe.exe" -version
 & "$bundle\LRCVideoMaker-CLI.exe" demo --dir "$env:TEMP\lvm-smoke" --frames 60 --encoder libx264
 if ($LASTEXITCODE -ne 0) { throw '绿色版导出失败' }
-& "$bundle\ffmpeg\ffprobe.exe" -v error -select_streams v:0 -show_entries stream=width,height,r_frame_rate,nb_frames,color_space,color_transfer,color_primaries,color_range -of json "$env:TEMP\lvm-smoke\demo.mp4"
+& "$bundle\ffmpeg\ffprobe.exe" -v error -count_frames -select_streams v:0 -show_entries stream=width,height,r_frame_rate,nb_read_frames,color_space,color_transfer,color_primaries,color_range -of json "$env:TEMP\lvm-smoke\demo.mkv"
 ```
 
 预期视频为 1920×1080、60/1 fps、60 帧，颜色为 BT.709 / tv。FFmpeg 未随包时跳过版本和导出检查，或先人工补齐工具；不要把只能通过 `--help` 当作完整导出验收。

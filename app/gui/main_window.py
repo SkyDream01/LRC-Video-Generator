@@ -136,7 +136,7 @@ class MainWindow(QMainWindow):
     def _build_status_bar(self) -> None:
         self._export_btn = QPushButton("导出视频")
         self._export_btn.setObjectName("exportButton")
-        self._export_btn.setToolTip("导出 1920×1080 MP4（Ctrl+E）")
+        self._export_btn.setToolTip("导出 1920×1080 MKV（Ctrl+E）")
         self._export_btn.clicked.connect(self._on_export_button)
 
         self._progress = QProgressBar()
@@ -322,7 +322,7 @@ class MainWindow(QMainWindow):
     def _save_project(self, force_dialog: bool = False) -> None:
         path: str | None = None
         if force_dialog or self.project_ctrl.kproj_path is None:
-            path, _ = QFileDialog.getSaveFileName(
+            path, selected_filter = QFileDialog.getSaveFileName(
                 self, "保存工程", "untitled.kproj", "LVM 工程 (*.kproj)"
             )
             if not path:
@@ -521,13 +521,13 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"缺少 {' 和 '.join(missing)}，无法导出", 6000)
             return
         suggested = default_output_name(self.project_ctrl.project.files.audio)
-        path, _ = QFileDialog.getSaveFileName(
-            self, "导出视频", suggested, "MP4 (*.mp4)"
+        path, selected_filter = QFileDialog.getSaveFileName(
+            self, "导出视频", suggested, "MKV（原始音频） (*.mkv);;MP4（AAC 音频） (*.mp4)"
         )
         if not path:
             return
-        if not path.lower().endswith(".mp4"):
-            path += ".mp4"
+        if not path.lower().endswith((".mkv", ".mp4")):
+            path += ".mp4" if selected_filter.startswith("MP4") else ".mkv"
         self.export_ctrl.start(
             self.project_ctrl.project, self.project_ctrl.base_dir, Path(path)
         )
@@ -672,7 +672,7 @@ class MainWindow(QMainWindow):
         QMessageBox.about(
             self,
             "关于 LVM",
-            "LVM — LRC Video Maker\n\n音频 + LRC 双语歌词 + 封面 → 1920×1080@60fps MP4。\n"
+            "LVM — LRC Video Maker\n\n音频 + LRC 双语歌词 + 封面 → 1920×1080@60fps MKV。\n"
             "M3：参数 schema、自动取色、kproj 工程与元数据显示。",
         )
 

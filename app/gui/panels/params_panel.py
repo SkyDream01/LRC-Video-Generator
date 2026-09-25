@@ -302,7 +302,8 @@ class ParamsPanel(QWidget):
         form.addRow("帧率", self._fps)
         form.addRow("编码器", self._encoder)
         form.addRow("视频码率", self._vbitrate)
-        form.addRow("音频码率", self._abitrate)
+        self._abitrate.setToolTip("仅 MP4 转码使用；MKV 直接保留原始音频")
+        form.addRow("音频码率（MP4）", self._abitrate)
         form.addRow(self._show_meta)
         return w
 

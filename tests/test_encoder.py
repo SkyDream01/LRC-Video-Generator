@@ -199,3 +199,18 @@ def test_probe_duration_ffprobe_failure_returns_none():
         encoder, "_run", side_effect=subprocess.SubprocessError("boom")
     ):
         assert probe_duration_ffprobe("ffprobe", "a.flac") is None
+
+
+@pytest.mark.parametrize("suffix", [".mkv", ".MKV"])
+@pytest.mark.parametrize("codec", ENCODER_FALLBACK_CHAIN)
+def test_mkv_preserves_original_audio(suffix, codec):
+    cmd = build_encode_command(
+        ffmpeg="ffmpeg", width=1920, height=1080, fps=60, frames=120,
+        audio_path="a.flac", output_path="out" + suffix, encoder=codec,
+    )
+    assert cmd[cmd.index("-c:a") + 1] == "copy"
+    assert "-b:a" not in cmd
+    assert "-ar" not in cmd
+    assert "-ac" not in cmd
+    assert "-movflags" not in cmd
+    assert cmd[cmd.index("-frames:v") + 1] == "120"

@@ -76,7 +76,7 @@ def _new_temp_output(output: Path) -> Path:
     """在最终输出同目录创建一个可由 ffmpeg 写入的临时路径。"""
     output.parent.mkdir(parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(
-        prefix=f".{output.stem}.", suffix=".mp4", dir=str(output.parent)
+        prefix=f".{output.stem}.", suffix=output.suffix or ".mkv", dir=str(output.parent)
     )
     os.close(fd)
     return Path(name)
@@ -88,7 +88,7 @@ def _remove_temp(path: Path) -> None:
         path.unlink(missing_ok=True)
     except OSError:
         # 临时文件若仍被第三方进程占用，不覆盖原始编码错误；下次启动
-        # 时可以由用户清理同目录下的隐藏 .<name>.*.mp4 文件。
+        # 时可以由用户清理同目录下的隐藏 .<name>.* 文件。
         pass
 
 
@@ -104,10 +104,10 @@ def render_video(
     cancel: CancelCallback | None = None,
     encoder_changed: Callable[[str], None] | None = None,
 ) -> ExportResult:
-    """渲染工程到 MP4。
+    """渲染工程到视频文件（默认 MKV 原始音频）。
 
     每种编码器都先写入输出目录下的临时文件，编码成功后才原子替换最终
-    文件。这样硬件编码失败或用户取消时不会留下半个 MP4，也不会损坏
+    文件。这样硬件编码失败或用户取消时不会留下半个视频文件，也不会损坏
     已存在的成品；硬件编码中途失败会完整重跑一次 libx264。
     """
     ffmpeg = find_binary("ffmpeg")
@@ -116,6 +116,8 @@ def render_video(
     if project.files.audio is None:
         raise ValueError("工程未配置音频文件，无法导出")
     output = Path(output_path)
+    if not output.suffix:
+        output = output.with_suffix(".mkv")
     if max_frames is not None and max_frames < 1:
         raise ValueError("max_frames 必须为正整数")
     if cancel is not None and cancel():

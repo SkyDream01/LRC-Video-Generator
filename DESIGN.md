@@ -2,7 +2,7 @@
 
 ## 1. 项目概述
 
-**定位**: 将音频、LRC 双语歌词、专辑封面三要素合成为专业水准的卡拉OK/动态歌词视频（MP4，默认 1920×1080@60fps）。GUI 采用 PySide6。
+**定位**: 将音频、LRC 双语歌词、专辑封面三要素合成为专业水准的卡拉OK/动态歌词视频（MKV，默认 1920×1080@60fps）。GUI 采用 PySide6。
 
 **目标用户**: 音乐爱好者、翻唱创作者、内容制作者——无需专业视频编辑技能即可一键生成歌词视频。
 
@@ -37,7 +37,7 @@
 | 预光栅化 | Pillow + NumPy | ≥ 10.0 | prepare：字体/描边/模糊/唱片贴图；不参与逐帧合成 |
 | 数值计算 | NumPy | ≥ 1.26 | 像素矩阵、渐变波浪、K-Means 取色；导出颜色转换由 FFmpeg 原生路径完成 |
 | 音频元数据 | Mutagen + ffprobe | mutagen ≥ 1.47 | ID3 标签；时长以 ffprobe 为准，mutagen 回退 |
-| 音频转码/封装 | FFmpeg（外部进程） | ≥ 5.0 | AAC 编码、rawvideo 编码、MP4 封装（含 ffprobe） |
+| 音频转码/封装 | FFmpeg（外部进程） | ≥ 5.0 | 音频流复制、rawvideo 编码、MKV 封装（含 ffprobe） |
 | 字体渲染 | Pillow ImageFont（FreeType 后端） | — | 加载 font/ 目录下的 TTF/OTF；仅在 prepare 阶段光栅化 |
 | 视频编码器 | libx264 / h264_nvenc / h264_amf / h264_qsv | — | 软件编码兜底 + 三家硬件编码 |
 | 工程文件 | JSON（标准库） | — | `.kproj` 工程序列化 |
@@ -177,7 +177,7 @@ LRC Video Generator/
                   QImage 紧凑 RGB buffer → FFmpeg 原生 BT.709/yuv420p → stdin
                 N = round(duration * fps)，并传 -frames:v N
                       ▼
-                 output.mp4
+                 output.mkv
 ```
 
 ### 4.4 渲染管线（prepare / eval / composite）
@@ -425,9 +425,11 @@ PCM 回退路径: 主时钟用已写入 QAudioSink 的帧数，不用 QMediaPlay
 | 视频编码 | H.264 High Profile；硬件 NVENC/AMF/QSV，回退 libx264 |
 | GOP | 2 秒（60fps → `-g 120`） |
 | 质量控制 | 软件编码 `-crf 17`；硬件编码 VBR 目标 12 Mbps、上限 24 Mbps |
-| 音频 | AAC-LC，320 kbps，48 kHz，立体声（源采样率不同于 48k 时重采样） |
-| 封装 | MP4，`+faststart`（moov 前置，利于网络播放） |
+| 音频 | 直接复制原始音频流（`-c:a copy`），不转码、不重采样 |
+| 封装 | MKV（Matroska） |
 | 时长 | `N = round(duration * fps)` 帧 + `-frames:v N` + `-shortest` 双保险 |
+
+默认导出 MKV，直接封装原始音频流，保留源编码、采样率与声道，不进行有损转码。显式选择 `.mp4` 输出时沿用 AAC 转码（工程中的 `audio_bitrate`、48 kHz）与 `+faststart`。
 
 **编码命令示例（软件兜底）：**
 
@@ -440,8 +442,8 @@ ffmpeg -y -hide_banner -loglevel error -filter_threads 1 \
   -c:v libx264 -preset medium -crf 17 -pix_fmt yuv420p \
   -colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv \
   -g 120 \
-  -c:a aac -b:a 320k -ar 48000 \
-  -frames:v <N> -shortest -movflags +faststart "<output.mp4>"
+  -c:a copy \
+  -frames:v <N> -shortest "<output.mkv>"
 ```
 
 Python 侧直接传递 QImage RGB32 内存视图，由 FFmpeg 的原生 scale/filter 路径
@@ -622,7 +624,7 @@ core 测试不依赖 Qt。composite 金帧单独标记，FreeType/Qt 版本差�
 
 | 阶段 | 内容 | 验收标准 |
 | ------ | ------ | ---------- |
-| M1✅ | 渲染核心 + 离屏 Qt 出片 | 命令行产出 1920×1080@60 MP4；prepare/eval 不碰 Qt；composite 只走 QPainter |
+| M1✅ | 渲染核心 + 离屏 Qt 出片 | 命令行产出 1920×1080@60 MKV；prepare/eval 不碰 Qt；composite 只走 QPainter |
 | M2✅ | GUI + 实时预览 + 纠漂时钟 | 播放时预览稳定 60fps（prepare 不在播放路径上）；scrub 即时、无 PTS 阶跃卡顿 |
 | M3✅ | 参数 schema + 取色 + kproj | `{type,params}` 可往返；防抖 prepare 后即见；ID3/LRC 元数据可显示 |
 | M4 | 硬件编码 + yuv 管道 + 进度/取消 + 打包 | 三家硬件编码可用，Windows 导出不因 rgb24 管道卡住，发布绿色版 |

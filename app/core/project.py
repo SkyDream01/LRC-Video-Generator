@@ -356,7 +356,7 @@ def ensure_dir(path: str | Path) -> Path:
     return d
 
 
-def default_output_name(audio_path: str | Path | None, suffix: str = ".mp4") -> str:
+def default_output_name(audio_path: str | Path | None, suffix: str = ".mkv") -> str:
     """根据音频文件名生成默认输出名。"""
     if audio_path:
         stem = Path(audio_path).stem or "output"

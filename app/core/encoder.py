@@ -245,10 +245,17 @@ def build_encode_command(
     audio_bitrate: str = "320k",
     input_pixel_format: str = "rgb24",
 ) -> list[str]:
-    """构建完整编码命令：rawvideo stdin + 音频 + BT.709/tv + faststart。"""
+    """构建完整编码命令：rawvideo stdin + BT.709/tv；MKV 复制音频，MP4 转 AAC。"""
     if input_pixel_format not in ("rgb24", "bgr0", "0rgb"):
         raise ValueError(f"不支持的输入像素格式：{input_pixel_format}")
     encoder = normalize_encoder(encoder)
+    copy_audio = Path(output_path).suffix.lower() == ".mkv"
+    audio_options = (
+        ["-c:a", "copy"]
+        if copy_audio
+        else ["-c:a", "aac", "-b:a", audio_bitrate, "-ar", "48000"]
+    )
+    mux_options = [] if copy_audio else ["-movflags", "+faststart"]
     return [
         ffmpeg,
         "-y",
@@ -309,17 +316,11 @@ def build_encode_command(
         "tv",
         "-g",
         str(2 * fps),
-        "-c:a",
-        "aac",
-        "-b:a",
-        audio_bitrate,
-        "-ar",
-        "48000",
+        *audio_options,
         "-frames:v",
         str(frames),
         "-shortest",
-        "-movflags",
-        "+faststart",
+        *mux_options,
         str(output_path),
     ]
 

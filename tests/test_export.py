@@ -1,5 +1,6 @@
 """离屏导出冒烟测试（qt 标记；需要 ffmpeg，缺失时 skip）。"""
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -18,8 +19,9 @@ def _require_ffmpeg() -> str:
     return ffmpeg
 
 
+@pytest.mark.parametrize("suffix", [".mkv", ".mp4"])
 @pytest.mark.parametrize("encoder", ["auto", "libx264"])
-def test_render_video_smoke(tmp_path: Path, encoder):
+def test_render_video_smoke(tmp_path: Path, encoder, suffix):
     from app.core.demo import make_demo_project
     from app.gui.exporter import render_video
 
@@ -32,7 +34,7 @@ def test_render_video_smoke(tmp_path: Path, encoder):
     result = render_video(
         project,
         work,
-        tmp_path / "out.mp4",
+        tmp_path / ("out" + suffix),
         max_frames=30,
         encoder_changed=encoders.append,
         progress=lambda done, total: progress.append((done, total)),
@@ -55,10 +57,11 @@ def test_render_video_smoke(tmp_path: Path, encoder):
                 ffprobe,
                 "-v",
                 "error",
+                "-count_frames",
                 "-select_streams",
                 "v:0",
                 "-show_entries",
-                "stream=width,height,r_frame_rate,nb_frames,color_space,color_primaries,color_transfer,color_range",
+                "stream=width,height,r_frame_rate,nb_read_frames,color_space,color_primaries,color_transfer,color_range",
                 "-of",
                 "csv=p=0",
                 str(result.output),
@@ -71,6 +74,24 @@ def test_render_video_smoke(tmp_path: Path, encoder):
         assert b"bt709" in proc.stdout
         assert b"tv" in proc.stdout
         assert b"30" in proc.stdout.strip().split(b",")
+        probe = subprocess.run(
+            [ffprobe, "-v", "error", "-show_streams", "-show_format",
+             "-of", "json", str(result.output)], capture_output=True, check=True,
+        )
+        info = json.loads(probe.stdout)
+        audio = next(s for s in info["streams"] if s["codec_type"] == "audio")
+        if suffix == ".mkv":
+            assert "matroska" in info["format"]["format_name"]
+            source = subprocess.run(
+                [ffprobe, "-v", "error", "-select_streams", "a:0",
+                 "-show_streams", "-of", "json", str(work / "demo.wav")],
+                capture_output=True, check=True,
+            )
+            source_audio = json.loads(source.stdout)["streams"][0]
+            for key in ("codec_name", "sample_rate", "channels", "bits_per_sample"):
+                assert audio[key] == source_audio[key]
+        else:
+            assert audio["codec_name"] == "aac"
 
 
 def test_render_video_cancelled(tmp_path: Path):
@@ -142,3 +163,15 @@ def test_render_video_requires_audio(tmp_path: Path):
     project = KProj()
     with pytest.raises(ValueError):
         render_video(project, tmp_path, tmp_path / "out.mp4")
+
+
+@pytest.mark.parametrize("suffix", [".mkv", ".mp4"])
+def test_temporary_output_matches_container(tmp_path, suffix):
+    from app.gui.exporter import _new_temp_output, _remove_temp
+
+    temp = _new_temp_output(tmp_path / ("video" + suffix))
+    try:
+        assert temp.suffix == suffix
+        assert temp.parent == tmp_path
+    finally:
+        _remove_temp(temp)

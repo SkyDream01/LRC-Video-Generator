@@ -1,7 +1,7 @@
 """LVM 入口。
 
 子命令：
-- export：从 .kproj 或媒体文件渲染 MP4（离屏 Qt + ffmpeg 管道）
+- export：从 .kproj 或媒体文件渲染 MKV（离屏 Qt + ffmpeg 管道）
 - demo：生成演示工程并出片（M1 验收冒烟）
 - gui：启动图形界面（M2/M4 交付）
 """
@@ -80,7 +80,7 @@ def cmd_demo(args: argparse.Namespace) -> int:
     work_dir = Path(args.dir)
     project, kproj_path = make_demo_project(work_dir)
     _apply_overrides(project, args)
-    output = Path(args.output) if args.output else work_dir / "demo.mp4"
+    output = Path(args.output) if args.output else work_dir / "demo.mkv"
     output.parent.mkdir(parents=True, exist_ok=True)
 
     print(f"演示工程: {kproj_path}")
@@ -115,9 +115,9 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--encoder", help="编码器（默认 auto：NVENC→AMF→QSV→libx264）")
         p.add_argument("--duration", type=float, help="覆盖时长（秒）")
         p.add_argument("--frames", type=int, help="限制导出帧数（调试用）")
-        p.add_argument("--output", help="输出 MP4 路径")
+        p.add_argument("--output", help="输出路径（默认 MKV 原始音频，也支持 MP4/AAC）")
 
-    p_export = sub.add_parser("export", help="渲染工程/媒体到 MP4")
+    p_export = sub.add_parser("export", help="渲染工程/媒体到 MKV")
     p_export.add_argument("--kproj", help="工程文件路径")
     p_export.add_argument("--audio", help="音频文件 (.mp3/.wav/.flac/.m4a)")
     p_export.add_argument("--lrc", help="LRC 歌词文件")
