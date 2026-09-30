@@ -254,7 +254,7 @@ def test_params_panel_schema_generated(qapp):
     panel.bind(project)
 
     # 下拉框选项与注册表一致（GUI 不写死动画）
-    for kind in ("background", "lyrics", "cover"):
+    for kind in ("background", "lyrics", "cover", "filter"):
         combo = panel._anim_combos[kind]
         options = [combo.itemData(i) for i in range(combo.count()) if combo.itemData(i)]
         assert len(options) == len(ANIM_REGISTRY[kind])
@@ -288,6 +288,25 @@ def test_params_panel_type_switch_resets_params(qapp):
     cls = ANIM_REGISTRY["lyrics"]["scroll_list"]
     assert project.animations.lyrics.params == cls.defaults()  # 按 schema 填默认值
     assert changes
+
+
+def test_filter_schema_controls_update_and_reload_project(qapp):
+    from PySide6.QtWidgets import QDoubleSpinBox
+    from app.gui.panels.params_panel import ParamsPanel
+
+    panel = ParamsPanel()
+    project = KProj()
+    panel.bind(project)
+    combo = panel._anim_combos["filter"]
+    combo.setCurrentIndex(combo.findData("bokeh"))
+    assert project.animations.filter.type == "bokeh"
+    form = panel._anim_forms["filter"]
+    strength = form.itemAt(0, form.ItemRole.FieldRole).widget()
+    assert isinstance(strength, QDoubleSpinBox)
+    strength.setValue(.72)
+    assert project.animations.filter.params["strength"] == .72
+    panel.bind(project)
+    assert panel._anim_forms["filter"].itemAt(0, form.ItemRole.FieldRole).widget().value() == .72
 
 
 def test_params_panel_animation_categories_and_descriptions(qapp):

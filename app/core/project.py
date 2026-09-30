@@ -59,11 +59,12 @@ class AnimSpec:
 
 @dataclass
 class Animations:
-    """三层动画配置。"""
+    """背景、歌词、封面与动态滤镜配置。"""
 
     background: AnimSpec = field(default_factory=lambda: AnimSpec(type="static_blur"))
     lyrics: AnimSpec = field(default_factory=lambda: AnimSpec(type="fade"))
     cover: AnimSpec = field(default_factory=lambda: AnimSpec(type="static"))
+    filter: AnimSpec = field(default_factory=lambda: AnimSpec(type="none"))
 
 
 @dataclass
@@ -256,6 +257,7 @@ def kproj_from_dict(data: dict) -> KProj:
         background=_parse_anim_spec(anims_raw.get("background"), "static_blur"),
         lyrics=_parse_anim_spec(anims_raw.get("lyrics"), "fade"),
         cover=_parse_anim_spec(anims_raw.get("cover"), "static"),
+        filter=_parse_anim_spec(anims_raw.get("filter"), "none"),
     )
 
     return KProj(

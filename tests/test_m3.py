@@ -100,7 +100,7 @@ def test_palette_handles_transparency_and_invalid_hex():
 def test_animation_schema_coerces_boolean_strings():
     # 用现有 choice/int schema 间接验证外部 JSON 的参数收敛逻辑。
     resolved = ScrollListLyrics.resolve_params({"lines": "7", "ease": "linear"})
-    assert resolved == {"lines": 7, "ease": "linear"}
+    assert resolved == {"lines": 7, "ease": "linear", "transition_ms": 350}
 
 
 def test_kproj_malformed_sections_fall_back_to_latest_defaults(tmp_path):

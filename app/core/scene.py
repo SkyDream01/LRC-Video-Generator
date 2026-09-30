@@ -1,4 +1,4 @@
-"""Scene：组装三层动画，持有 prepare 缓存；eval(t) → SceneState（纯状态，无像素）。"""
+"""Scene：组装动画与滤镜，持有 prepare 缓存；eval(t) 输出纯状态。"""
 
 from __future__ import annotations
 
@@ -9,12 +9,15 @@ from .anims.background import BgState
 from .anims.base import (
     KIND_BACKGROUND,
     KIND_COVER,
+    KIND_FILTER,
+    KINDS,
     KIND_LYRICS,
     BaseLayer,
     clamp,
     layer_class,
 )
 from .anims.cover import CoverState
+from .anims.filters import FilterState
 from .anims.lyrics import LyricsState, apply_word_timing
 from .context import RenderContext
 from .prepare import PreparedBitmap, layout_text
@@ -43,10 +46,11 @@ class SceneState:
     cover: CoverState
     meta_alpha: float
     current_line: int
+    filter: FilterState = FilterState()
 
 
 class Scene:
-    """按工程配置实例化三层动画并串联 prepare / eval。
+    """按工程配置实例化动画与滤镜并串联 prepare / eval。
 
     Scene 拥有 prepare 缓存（写入 ctx.assets）；层上不提供内部 render()，
     避免绕过缓存。预览与导出共享同一 Scene 实例与同一份 assets。
@@ -55,7 +59,7 @@ class Scene:
     def __init__(self, ctx: RenderContext) -> None:
         self.ctx = ctx
         self.layers: dict[str, BaseLayer] = {}
-        for kind in (KIND_BACKGROUND, KIND_LYRICS, KIND_COVER):
+        for kind in KINDS:
             spec = getattr(ctx.project.animations, kind)
             cls = layer_class(kind, spec.type)
             if cls is None:
@@ -108,4 +112,5 @@ class Scene:
             cover=cover,
             meta_alpha=meta_alpha,
             current_line=lyrics.current_index,
+            filter=cast(FilterState, self.layers[KIND_FILTER].eval(t, self.ctx)),
         )

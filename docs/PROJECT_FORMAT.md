@@ -105,9 +105,13 @@
 | background | `gradient_wave` | `speed` 0.05–5.0；`amp` 0–1 |
 | background | `wave_blur` | `speed` 0.05–5.0；`amp` 0–1 |
 | lyrics | `fade` | `fade_ms` 0–2000 |
-| lyrics | `scroll_list` | `lines` 1–11；`ease` 为 `linear`/`cubic` |
+| lyrics | `scroll_list` | `lines` 1–11；`ease` 为 `linear`/`cubic`/`smooth`；`transition_ms` 100–1500，默认 350 |
+| lyrics | `arc` | `lines` 3–9；`spacing` 12–24；`transition_ms` 100–1500，默认 650；`ease` 为 `linear`/`cubic`/`smooth` |
 | cover | `static` | 无 |
 | cover | `disc_rotate` | `rpm` 5–78 |
+| filter | `none` | 无（默认，兼容旧工程） |
+| filter | `light_leak` | `strength` 0–1；`period` 2–60 秒；`size` 400–1800 px |
+| filter | `bokeh` | `strength` 0–1；`period` 4–60 秒；`count` 4–64；`size` 20–240 px；`seed` 0–99999 |
 
 参数会按动画的 `params_schema` 收敛：未知 key 被忽略，非法值回退默认值，越界数值被钳制。切换动画类型时，GUI 会用新类型的默认参数重新填充该层。
 

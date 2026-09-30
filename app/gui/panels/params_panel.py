@@ -32,6 +32,7 @@ from ...core.anims.base import (
     ANIM_REGISTRY,
     KIND_BACKGROUND,
     KIND_COVER,
+    KIND_FILTER,
     KIND_LYRICS,
     KINDS,
     ParamSpec,
@@ -46,6 +47,7 @@ _KIND_TITLES = {
     KIND_BACKGROUND: "背景动画",
     KIND_LYRICS: "歌词动画",
     KIND_COVER: "封面动画",
+    KIND_FILTER: "动态滤镜",
 }
 
 _ENCODER_ITEMS = (

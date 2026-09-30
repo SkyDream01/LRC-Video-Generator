@@ -17,7 +17,8 @@ from ..context import RenderContext
 KIND_BACKGROUND = "background"
 KIND_LYRICS = "lyrics"
 KIND_COVER = "cover"
-KINDS = (KIND_BACKGROUND, KIND_LYRICS, KIND_COVER)
+KIND_FILTER = "filter"
+KINDS = (KIND_BACKGROUND, KIND_LYRICS, KIND_COVER, KIND_FILTER)
 
 
 @dataclass(frozen=True)

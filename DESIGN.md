@@ -20,6 +20,7 @@
 | 背景动画 | 图片背景：静态模糊、呼吸缩放、纵向漂移；生成背景：渐变流动、午夜雾光 |
 | 歌词动画 | 单行切换：淡入淡出、上下滑动、横向显现、立体翻转；多行滚动：纵向滚动、圆弧滚动 |
 | 封面动画 | 方形封面：静态倒影、呼吸缩放、上下悬浮、立体摇摆；圆形封面：黑胶旋转、星环旋转 |
+| 动态滤镜 | 独立氛围层：关闭、柔光流动、漂浮光斑；背景之后、封面与歌词之前以 Screen 混合 |
 | 硬件加速 | NVIDIA NVENC / AMD AMF / Intel QSV，回退到软件编码 libx264 |
 
 ---
@@ -252,6 +253,7 @@ ANIM_REGISTRY: dict[str, dict[str, type[BaseLayer]]] = {
     "background": {"static_blur": StaticBlurBG, "gradient_wave": GradientWaveBG, "wave_blur": WaveBlurBG, "breath_zoom": BreathZoomBG, "midnight": MidnightBG},
     "lyrics":     {"fade": FadeLyrics, "scroll_list": ScrollListLyrics, "slide": SlideLyrics, "reveal": RevealLyrics, "flip_3d": Flip3DLyrics, "arc": ArcLyrics},
     "cover":      {"static": StaticCover, "disc_rotate": DiscRotate, "breath": BreathCover, "float": FloatCover, "rock_3d": Rock3DCover, "celestial": CelestialCover},
+    "filter":     {"none": NoFilter, "light_leak": LightLeakFilter, "bokeh": BokehFilter},
 }
 ```
 
@@ -287,7 +289,7 @@ ANIM_REGISTRY: dict[str, dict[str, type[BaseLayer]]] = {
 | ---- | ------ | -------- |
 | background | `gradient_wave` | `speed` 流动速度、`amp` 波纹强度 |
 | background | `wave_blur` | `speed` 漂移速度、`amp` 漂移幅度 |
-| lyrics | `scroll_list` | `lines` 可见行数、`ease` 缓动名 |
+| lyrics | `scroll_list` | `lines` 可见行数、`ease` 缓动名、`transition_ms` 换行时长 |
 | lyrics | `fade` | `fade_ms` 过渡时长（毫秒） |
 | cover | `disc_rotate` | `rpm` 转速，默认 33.3 |
 
@@ -520,8 +522,9 @@ Python 侧直接传递 QImage RGB32 内存视图，由 FFmpeg 的原生 scale/fi
   },
   "animations": {
     "background": {"type": "gradient_wave", "params": {"speed": 1.0, "amp": 0.3}},
-    "lyrics": {"type": "scroll_list", "params": {"lines": 5, "ease": "cubic"}},
-    "cover": {"type": "disc_rotate", "params": {"rpm": 33.3}}
+    "lyrics": {"type": "scroll_list", "params": {"lines": 5, "ease": "cubic", "transition_ms": 350}},
+    "cover": {"type": "disc_rotate", "params": {"rpm": 33.3}},
+    "filter": {"type": "none", "params": {}}
   },
   "colors": {
     "auto_extract": true,
@@ -582,14 +585,32 @@ Python 侧直接传递 QImage RGB32 内存视图，由 FFmpeg 的原生 scale/fi
 ```json
 {
   "background": {"type": "midnight", "params": {}},
-  "lyrics": {"type": "arc", "params": {"lines": 7, "spacing": 18.0, "transition_ms": 650}},
+  "lyrics": {"type": "arc", "params": {"lines": 7, "spacing": 18.0, "transition_ms": 650, "ease": "cubic"}},
   "cover": {"type": "celestial", "params": {"rpm": 0.6}}
 }
 ```
 
 `layout_preset` 支持 `landscape_mv`（封面左 / 歌词右）和 `landscape_mv_reversed`（歌词左 / 封面右）。schema 预留以便后续 `portrait_9_16` 等。
 
-**版本兼容策略**：读取时按 `version` 字段逐级迁移。v1.0 若 `animations` 为字符串（如 `"cover": "disc_rotate"`），升为 `{type, params:{}}`。内存中始终表示为最新模型；保存一律写当前版本号。未知字段忽略不报错（向前兼容）。
+动态滤镜配置示例（替换 `animations.filter`）：
+
+```json
+{"type": "light_leak", "params": {"strength": 0.35, "period": 16.0, "size": 1100}}
+```
+
+```json
+{"type": "bokeh", "params": {"strength": 0.45, "period": 20.0, "count": 24, "size": 90, "seed": 42}}
+```
+
+滤镜是第四个 `BaseLayer`，由同一注册表、prepare、eval、composite 管线处理；GUI 按 schema 生成参数。
+柔光只缓存两张 128×128 RGBA 贴图，光斑只缓存两张 64×64 贴图及固定种子序列。
+逐帧不随机采样、不生成像素；Screen 混合在背景之后执行，不改变封面与歌词本身的颜色。
+光斑循环边界透明度及其变化速度归零，任意跳转和导出可精确复现。强度为 0 时不绘制。
+纵向与圆弧滚动支持 `ease: "smooth"` 五次缓动，起止速度与加速度为零；保留旧默认 `cubic`。
+纵向滚动换行时长默认 350ms，两种滚动均限制到当前行区间的一半，支持密集短句。
+单行纵向滚动在换行时保留交接区，避免两行同时透明。
+
+**版本兼容策略**：读取时按 `version` 字段逐级迁移。v1.0 若 `animations` 为字符串（如 `"cover": "disc_rotate"`），升为 `{type, params:{}}`。内存中始终表示为最新模型；保存一律写当前版本号。未知字段忽略不报错（向前兼容）。`filter` 为 v1.1 可选新增项，缺失时默认 `none`；未知滤镜类型渲染回退关闭，旧工程画面保持不变。
 
 ---
 

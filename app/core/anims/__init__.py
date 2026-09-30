@@ -13,6 +13,7 @@ from .base import (
     ANIM_REGISTRY,
     KIND_BACKGROUND,
     KIND_COVER,
+    KIND_FILTER,
     KIND_LYRICS,
     KINDS,
     BaseLayer,
@@ -42,12 +43,19 @@ from .lyrics import (
     ScrollListLyrics,
     SlideLyrics,
 )
+from .filters import FilterAssets, FilterState, LightLeakFilter, BokehFilter, NoFilter
 
 __all__ = [
     "ANIM_REGISTRY",
     "KINDS",
     "KIND_BACKGROUND",
     "KIND_COVER",
+    "KIND_FILTER",
+    "FilterAssets",
+    "FilterState",
+    "LightLeakFilter",
+    "BokehFilter",
+    "NoFilter",
     "KIND_LYRICS",
     "ArcLyrics",
     "BaseLayer",

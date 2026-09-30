@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 
 import numpy as np
@@ -17,6 +17,7 @@ from PySide6.QtGui import QImage, QPainter, QTransform
 from ..core.anims.background import BgAssets
 from ..core.anims.base import clamp
 from ..core.anims.cover import CoverAssets
+from ..core.anims.filters import FilterAssets
 from ..core.anims.lyrics import LyricsAssets
 from ..core.context import RenderContext
 from ..core.prepare import PreparedBitmap
@@ -127,6 +128,7 @@ class GuiAssets:
     cover_ornament: GuiBitmap | None
     arc_lyrics: bool
     meta_segments: list[GuiBitmap]
+    filter_textures: list[QImage] = field(default_factory=list)
 
     @classmethod
     def from_context(cls, ctx: RenderContext) -> GuiAssets:
@@ -182,6 +184,10 @@ class GuiAssets:
             meta_segments=meta_segments,
             cover_ornament=_gui_bitmap(cover.ornament) if cover else None,
             arc_lyrics=ctx.project.animations.lyrics.type == "arc",
+            filter_textures=[
+                numpy_to_qimage(pixels).convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+                for pixels in _filter_textures(ctx)
+            ],
         )
 
 
@@ -196,9 +202,33 @@ def composite(painter: QPainter, state: SceneState, assets: GuiAssets) -> None:
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     _draw_background(painter, state, assets)
+    _draw_filter(painter, state, assets)
     _draw_cover(painter, state, assets)
     _draw_lyrics(painter, state, assets)
     _draw_metadata(painter, state, assets)
+    painter.restore()
+
+
+def _filter_textures(ctx: RenderContext) -> tuple[np.ndarray, ...]:
+    """兼容尚未准备滤镜层的上下文。"""
+    assets = ctx.assets.get("filter")
+    return assets.textures if isinstance(assets, FilterAssets) else ()
+
+
+def _draw_filter(painter: QPainter, state: SceneState, assets: GuiAssets) -> None:
+    if not state.filter.sprites:
+        return
+    painter.save()
+    painter.setClipRect(QRectF(0, 0, *assets.canvas), Qt.ClipOperation.IntersectClip)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
+    for sprite in state.filter.sprites:
+        if sprite.opacity <= 0 or not 0 <= sprite.texture < len(assets.filter_textures):
+            continue
+        painter.setOpacity(clamp(sprite.opacity))
+        painter.drawImage(
+            QRectF(sprite.x - sprite.size / 2, sprite.y - sprite.size / 2,
+                   sprite.size, sprite.size), assets.filter_textures[sprite.texture],
+        )
     painter.restore()
 
 

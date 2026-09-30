@@ -20,16 +20,18 @@ EXPECTED = {
     "background": {"static_blur", "gradient_wave", "wave_blur", "breath_zoom", "midnight"},
     "lyrics": {"fade", "scroll_list", "slide", "reveal", "flip_3d", "arc"},
     "cover": {"static", "disc_rotate", "breath", "float", "rock_3d", "celestial"},
+    "filter": {"none", "light_leak", "bokeh"},
 }
 
 
 def test_registry_complete():
-    assert set(KINDS) == {"background", "lyrics", "cover"}
+    assert set(KINDS) == set(EXPECTED)
     for kind, expected_types in EXPECTED.items():
         assert set(ANIM_REGISTRY[kind]) == expected_types
 
 
 @pytest.mark.parametrize("kind,categories,types", [
+    ("filter", ["基础", "氛围叠加"], ["none", "light_leak", "bokeh"]),
     ("background", ["图片背景", "生成背景"], [
         "static_blur", "breath_zoom", "wave_blur", "gradient_wave", "midnight",
     ]),

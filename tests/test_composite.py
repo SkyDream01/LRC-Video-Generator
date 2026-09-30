@@ -47,6 +47,46 @@ def _render(state, gui_assets, fmt=QImage.Format.Format_RGB888) -> QImage:
 LYRC = "[00:01.00]Hello world\n[00:01.00]你好世界\n[00:05.00]Second line\n"
 
 
+@pytest.mark.parametrize("name", ["light_leak", "bokeh"])
+def test_dynamic_filter_pixels_and_disabled_identity(name):
+    from dataclasses import replace
+    from app.core.anims.filters import FilterState
+
+    scene, gui = _make_scene(LYRC, {"filter": name})
+    state = scene.eval(2)
+    plain = _render(replace(state, filter=FilterState()), gui)
+    filtered = _render(state, gui)
+    assert filtered != plain
+    assert filtered == _render(scene.eval(2), gui)
+    assert filtered != _render(replace(state, filter=scene.eval(7).filter), gui)
+    # 目标格式与预览变换不会改变滤镜结果。
+    native = _render(state, gui, QImage.Format.Format_RGB32)
+    np.testing.assert_allclose(
+        qimage_to_rgb_array(filtered),
+        qimage_to_rgb_array(native.convertToFormat(QImage.Format.Format_RGB888)), atol=1,
+    )
+    cx, cy, cw, ch = gui.cover_rect
+    rect = (round(cx + cw / 2), round(cy + ch / 2))
+    assert filtered.pixelColor(*rect) == plain.pixelColor(*rect)
+    preview = QImage(1960, 1120, QImage.Format.Format_RGB888)
+    preview.fill(Qt.GlobalColor.black)
+    painter = QPainter(preview)
+    painter.translate(20, 20)
+    painter.setClipRect(0, 0, 1920, 1080)
+    transform, clip, mode = painter.transform(), painter.clipRegion(), painter.compositionMode()
+    composite(painter, state, gui)
+    assert painter.transform() == transform
+    assert painter.clipRegion() == clip
+    assert painter.compositionMode() == mode
+    painter.end()
+    np.testing.assert_array_equal(
+        qimage_to_rgb_array(preview)[20:1100, 20:1940], qimage_to_rgb_array(filtered),
+    )
+    layer = scene.layers["filter"]
+    layer.params["strength"] = 0
+    assert _render(scene.eval(2), gui) == plain
+
+
 @pytest.mark.parametrize("background", [
     "static_blur", "gradient_wave", "wave_blur", "breath_zoom",
 ])

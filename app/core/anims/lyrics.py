@@ -13,8 +13,6 @@ from .base import KIND_LYRICS, BaseLayer, ParamSpec, clamp, register
 
 # 主歌词与译文的垂直间距（逻辑像素）
 SUB_GAP = 18.0
-# 纵向滚动换行缓动时长（毫秒）
-SCROLL_MS = 350.0
 
 
 @dataclass(frozen=True)
@@ -199,7 +197,8 @@ class ScrollListLyrics(BaseLayer):
     def params_schema(cls) -> list[ParamSpec]:
         return [
             ParamSpec("lines", "可见行数", "int", 5, 1, 11),
-            ParamSpec("ease", "缓动", "choice", "cubic", choices=("linear", "cubic")),
+            ParamSpec("ease", "缓动", "choice", "cubic", choices=("linear", "cubic", "smooth")),
+            ParamSpec("transition_ms", "换行时长 (ms)", "int", 350, 100, 1500),
         ]
 
     def prepare(self, ctx: RenderContext) -> LyricsAssets:
@@ -214,7 +213,7 @@ class ScrollListLyrics(BaseLayer):
         ease_fn = _EASINGS.get(str(self.params["ease"]), _ease_cubic)
         # 换行动画：当前行 start 起缓动，从上一行位置滑到当前位置（首行保持居中）
         start, end = ctx.intervals[idx]
-        seconds = min(SCROLL_MS / 1000.0, (end - start) / 2.0)
+        seconds = min(self.params["transition_ms"] / 1000.0, (end - start) / 2.0)
         progress = clamp((t - start) / seconds) if seconds > 0 else 1.0
         focus = max(0.0, (idx - 1) + ease_fn(progress))
 
@@ -231,7 +230,9 @@ class ScrollListLyrics(BaseLayer):
             dist = abs(i - focus)
             if dist > half + 0.5:
                 continue
-            alpha = (1.0 - 0.65 * _smooth(min(dist, 1.0))) * _smooth(clamp((half - dist) * 2.0))
+            # 单行模式也保留交接区，避免滚动到两行中间时两行同时不可见。
+            edge = max(1.0, half)
+            alpha = (1.0 - 0.65 * _smooth(min(dist, 1.0))) * _smooth(clamp((edge - dist) * 2.0))
             y = cy + (i - focus) * assets.step - assets.lines[i].height / 2.0
             items.append(LyricItem(i, cx, y, alpha, i == idx))
         return LyricsState(tuple(items), idx)
@@ -246,7 +247,12 @@ def _ease_cubic(p: float) -> float:
     return _smooth(p)
 
 
-_EASINGS = {"linear": lambda p: p, "cubic": _ease_cubic}
+def _smoother(p: float) -> float:
+    """起止速度与加速度均为零的五次缓动。"""
+    return p * p * p * (p * (6 * p - 15) + 10)
+
+
+_EASINGS = {"linear": lambda p: p, "cubic": _ease_cubic, "smooth": _smoother}
 
 
 @register(KIND_LYRICS)
@@ -364,6 +370,7 @@ class ArcLyrics(FadeLyrics):
             ParamSpec("lines", "可见行数", "int", 7, 3, 9),
             ParamSpec("spacing", "圆弧间隔 (度)", "float", 18.0, 12.0, 24.0),
             ParamSpec("transition_ms", "换行时长 (ms)", "int", 650, 100, 1500),
+            ParamSpec("ease", "缓动", "choice", "cubic", choices=("linear", "cubic", "smooth")),
         ]
 
     def eval(self, t: float, ctx: RenderContext) -> LyricsState:
@@ -374,7 +381,7 @@ class ArcLyrics(FadeLyrics):
         start, end = ctx.intervals[idx]
         seconds = min(self.params["transition_ms"]/1000, (end-start)/2)
         progress = clamp((t-start)/seconds) if seconds > 0 else 1.0
-        focus = max(0, idx-1+_ease_cubic(progress))
+        focus = max(0, idx-1+_EASINGS[self.params["ease"]](progress))
         x, y, w, h = ctx.layout.cover_rect
         cx, cy = x+w/2, y+h/2
         direction = 1 if assets.rect[0] + assets.rect[2]/2 >= cx else -1
