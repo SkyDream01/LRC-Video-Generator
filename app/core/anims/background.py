@@ -1,4 +1,4 @@
-"""背景动画：静态模糊 / 渐变波浪 / 波浪模糊 / 呼吸缩放。"""
+"""背景效果：图片背景（模糊、缩放、漂移）与生成背景（渐变、雾光）。"""
 
 from __future__ import annotations
 
@@ -42,6 +42,7 @@ class BgAssets:
 
 class _BackgroundBase(BaseLayer):
     kind: ClassVar[str] = KIND_BACKGROUND
+    category: ClassVar[str] = "图片背景"
 
     def _source(self, ctx: RenderContext):
         return ctx.bg_image if ctx.bg_image is not None else ctx.cover
@@ -53,6 +54,8 @@ class StaticBlurBG(_BackgroundBase):
 
     anim_type: ClassVar[str] = "static_blur"
     label: ClassVar[str] = "静态模糊"
+    description: ClassVar[str] = "将背景图柔化为静止背景；未设置背景图时使用封面。"
+    display_order: ClassVar[int] = 0
 
     def prepare(self, ctx: RenderContext) -> BgAssets:
         w, h = ctx.width, ctx.height
@@ -65,16 +68,19 @@ class StaticBlurBG(_BackgroundBase):
 
 @register(KIND_BACKGROUND)
 class GradientWaveBG(_BackgroundBase):
-    """渐变波浪背景：纯数学生成，不依赖图片输入。"""
+    """渐变流动：纯数学生成渐变波纹，不依赖图片输入。"""
 
     anim_type: ClassVar[str] = "gradient_wave"
-    label: ClassVar[str] = "渐变波浪"
+    label: ClassVar[str] = "渐变流动"
+    category: ClassVar[str] = "生成背景"
+    description: ClassVar[str] = "主色与辅色组成渐变波纹，沿水平方向循环流动，无需背景图。"
+    display_order: ClassVar[int] = 30
 
     @classmethod
     def params_schema(cls) -> list[ParamSpec]:
         return [
-            ParamSpec("speed", "相位速度", "float", 1.0, 0.05, 5.0),
-            ParamSpec("amp", "振幅", "float", 0.3, 0.0, 1.0),
+            ParamSpec("speed", "流动速度", "float", 1.0, 0.05, 5.0),
+            ParamSpec("amp", "波纹强度", "float", 0.3, 0.0, 1.0),
         ]
 
     def prepare(self, ctx: RenderContext) -> BgAssets:
@@ -96,16 +102,18 @@ class GradientWaveBG(_BackgroundBase):
 
 @register(KIND_BACKGROUND)
 class WaveBlurBG(_BackgroundBase):
-    """波浪模糊背景：基于图片，整幅正弦纵向漂移。"""
+    """纵向漂移：模糊图片背景整体沿竖直方向往复移动。"""
 
     anim_type: ClassVar[str] = "wave_blur"
-    label: ClassVar[str] = "波浪模糊"
+    label: ClassVar[str] = "纵向漂移"
+    description: ClassVar[str] = "模糊背景图平滑上下漂移；未设置背景图时使用封面。"
+    display_order: ClassVar[int] = 20
 
     @classmethod
     def params_schema(cls) -> list[ParamSpec]:
         return [
-            ParamSpec("speed", "相位速度", "float", 1.0, 0.05, 5.0),
-            ParamSpec("amp", "振幅", "float", 0.3, 0.0, 1.0),
+            ParamSpec("speed", "漂移速度", "float", 1.0, 0.05, 5.0),
+            ParamSpec("amp", "漂移幅度", "float", 0.3, 0.0, 1.0),
         ]
 
     def prepare(self, ctx: RenderContext) -> BgAssets:
@@ -135,6 +143,8 @@ class BreathZoomBG(StaticBlurBG):
 
     anim_type: ClassVar[str] = "breath_zoom"
     label: ClassVar[str] = "呼吸缩放"
+    description: ClassVar[str] = "模糊背景图缓慢推近、拉远；未设置背景图时使用封面。"
+    display_order: ClassVar[int] = 10
 
     @classmethod
     def params_schema(cls) -> list[ParamSpec]:
@@ -153,7 +163,10 @@ class MidnightBG(StaticBlurBG):
     """深蓝径向雾光背景，与封面颜色无关。"""
 
     anim_type: ClassVar[str] = "midnight"
-    label: ClassVar[str] = "午夜雾蓝"
+    label: ClassVar[str] = "午夜雾光"
+    category: ClassVar[str] = "生成背景"
+    description: ClassVar[str] = "深蓝色静态雾光背景，无需背景图，使用固定配色。"
+    display_order: ClassVar[int] = 40
 
     def prepare(self, ctx: RenderContext) -> BgAssets:
         w, h = ctx.width, ctx.height

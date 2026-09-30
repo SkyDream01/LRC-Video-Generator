@@ -55,6 +55,15 @@ def layer_class(kind: str, anim_type: str) -> type[BaseLayer] | None:
     return table.get(anim_type) or next(iter(table.values()), None)
 
 
+def animation_groups(kind: str) -> tuple[tuple[str, tuple[type[BaseLayer], ...]], ...]:
+    """按图层元数据分组、排序，展示顺序不改变注册表的默认回退项。"""
+    groups: dict[str, list[type[BaseLayer]]] = {}
+    layers = sorted(ANIM_REGISTRY.get(kind, {}).values(), key=lambda cls: cls.display_order)
+    for cls in layers:
+        groups.setdefault(cls.category, []).append(cls)
+    return tuple((category, tuple(items)) for category, items in groups.items())
+
+
 def clamp(value: float, lo: float = 0.0, hi: float = 1.0) -> float:
     return max(lo, min(hi, value))
 
@@ -65,6 +74,9 @@ class BaseLayer(ABC):
     kind: ClassVar[str]
     anim_type: ClassVar[str]
     label: ClassVar[str]
+    category: ClassVar[str] = "其他"
+    description: ClassVar[str] = ""
+    display_order: ClassVar[int] = 100
 
     def __init__(self, params: dict | None = None) -> None:
         self.params: dict[str, Any] = self.resolve_params(params or {})

@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QCheckBox,
     QColorDialog,
@@ -35,6 +35,8 @@ from ...core.anims.base import (
     KIND_LYRICS,
     KINDS,
     ParamSpec,
+    animation_groups,
+    layer_class,
 )
 from ...core.color import Palette, rgb_to_hex
 from ...core.context import APP_ROOT, FontCache
@@ -140,6 +142,7 @@ class ParamsPanel(QWidget):
 
         self._anim_combos: dict[str, QComboBox] = {}
         self._anim_forms: dict[str, QFormLayout] = {}
+        self._anim_descriptions: dict[str, QLabel] = {}
 
         self._auto_extract = QCheckBox("自动从封面提取主色/辅色", self)
         self._color_primary = ColorButton(parent=self)
@@ -240,8 +243,24 @@ class ParamsPanel(QWidget):
             box.setObjectName("animationGroup")
             form = QFormLayout(box)
             combo = QComboBox(box)
-            for type_key, cls in ANIM_REGISTRY[kind].items():
-                combo.addItem(cls.label, type_key)
+            model = QStandardItemModel(combo)
+            for category, layers in animation_groups(kind):
+                header = QStandardItem(category)
+                header.setFlags(Qt.ItemFlag.NoItemFlags)
+                font = header.font()
+                font.setBold(True)
+                header.setFont(font)
+                model.appendRow(header)
+                for cls in layers:
+                    item = QStandardItem(cls.label)
+                    item.setData(cls.anim_type, Qt.ItemDataRole.UserRole)
+                    item.setToolTip(cls.description)
+                    model.appendRow(item)
+            combo.setModel(model)
+            combo.setMaxVisibleItems(12)
+            default_cls = layer_class(kind, "")
+            if default_cls is not None:
+                combo.setCurrentIndex(combo.findData(default_cls.anim_type))
             combo.currentIndexChanged.connect(
                 lambda _i, k=kind, c=combo: self._on_anim_type_changed(
                     k, c.currentData()
@@ -253,9 +272,15 @@ class ParamsPanel(QWidget):
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
             )
             form.addRow("类型", combo)
+            description = QLabel(box)
+            description.setObjectName("fieldLabel")
+            description.setWordWrap(True)
+            description.setTextFormat(Qt.TextFormat.PlainText)
+            form.addRow(description)
             form.addRow(params_form)
             self._anim_combos[kind] = combo
             self._anim_forms[kind] = params_form
+            self._anim_descriptions[kind] = description
             root.addWidget(box)
         root.addStretch(1)
         return w
@@ -443,9 +468,11 @@ class ParamsPanel(QWidget):
         if p is None:
             return
         spec_obj = getattr(p.animations, kind)
-        cls = ANIM_REGISTRY[kind].get(spec_obj.type) or next(
-            iter(ANIM_REGISTRY[kind].values())
-        )
+        cls = layer_class(kind, spec_obj.type)
+        if cls is None:
+            return
+        self._anim_descriptions[kind].setText(cls.description)
+        self._anim_combos[kind].setToolTip(cls.description)
         # 绑定/切换时把当前 JSON 参数收敛到 schema，避免非法值只在真正
         # 渲染时才被静默修正，导致界面显示值与保存内容不一致。
         spec_obj.params = cls.resolve_params(spec_obj.params)
@@ -598,10 +625,9 @@ class ParamsPanel(QWidget):
 
         for kind in KINDS:
             combo = self._anim_combos[kind]
+            cls = layer_class(kind, getattr(project.animations, kind).type)
             with _blocked(combo):
-                combo.setCurrentIndex(
-                    max(0, combo.findData(getattr(project.animations, kind).type))
-                )
+                combo.setCurrentIndex(combo.findData(cls.anim_type) if cls else -1)
             self._rebuild_anim_params(kind)
         self._sync_output_audio_ui()
         self._set_color_controls_enabled(not project.colors.auto_extract)

@@ -255,7 +255,10 @@ def test_params_panel_schema_generated(qapp):
 
     # 下拉框选项与注册表一致（GUI 不写死动画）
     for kind in ("background", "lyrics", "cover"):
-        assert panel._anim_combos[kind].count() == len(ANIM_REGISTRY[kind])
+        combo = panel._anim_combos[kind]
+        options = [combo.itemData(i) for i in range(combo.count()) if combo.itemData(i)]
+        assert len(options) == len(ANIM_REGISTRY[kind])
+        assert set(options) == set(ANIM_REGISTRY[kind])
         assert (
             panel._anim_combos[kind].currentData()
             == getattr(project.animations, kind).type
@@ -285,6 +288,53 @@ def test_params_panel_type_switch_resets_params(qapp):
     cls = ANIM_REGISTRY["lyrics"]["scroll_list"]
     assert project.animations.lyrics.params == cls.defaults()  # 按 schema 填默认值
     assert changes
+
+
+def test_params_panel_animation_categories_and_descriptions(qapp):
+    from app.core.anims import ANIM_REGISTRY, animation_groups
+    from app.gui.panels.params_panel import ParamsPanel
+
+    panel = ParamsPanel()
+    project = KProj()
+    panel.bind(project)
+    for kind, combo in panel._anim_combos.items():
+        headers = []
+        types = []
+        for i in range(combo.count()):
+            flags = combo.model().flags(combo.model().index(i, 0))
+            anim_type = combo.itemData(i)
+            if anim_type is None:
+                headers.append(combo.itemText(i))
+                assert not flags & Qt.ItemFlag.ItemIsSelectable
+                assert not flags & Qt.ItemFlag.ItemIsEnabled
+                continue
+            types.append(anim_type)
+            cls = ANIM_REGISTRY[kind][anim_type]
+            assert combo.itemText(i) == cls.label
+            assert combo.itemData(i, Qt.ItemDataRole.ToolTipRole) == cls.description
+            assert flags & Qt.ItemFlag.ItemIsSelectable
+            combo.setCurrentIndex(i)
+            assert getattr(project.animations, kind).type == anim_type
+            assert panel._anim_descriptions[kind].text() == cls.description
+            assert combo.toolTip() == cls.description
+        groups = animation_groups(kind)
+        assert headers == [category for category, _ in groups]
+        assert types == [cls.anim_type for _, items in groups for cls in items]
+
+
+def test_params_panel_bind_unknown_animation_selects_effect_not_header(qapp):
+    from app.gui.panels.params_panel import ParamsPanel
+
+    panel = ParamsPanel()
+    project = KProj()
+    project.animations.background.type = "future_effect"
+    changes = []
+    panel.paramsChanged.connect(lambda: changes.append(True))
+    panel.bind(project)
+    assert panel._anim_combos["background"].currentData() == "static_blur"
+    assert panel._anim_descriptions["background"].text()
+    assert project.animations.background.type == "future_effect"
+    assert not changes
 
 
 def test_params_panel_bind_blocks_signals(qapp):

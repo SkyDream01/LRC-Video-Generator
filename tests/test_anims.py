@@ -10,6 +10,7 @@ from app.core.anims import (
     BaseLayer,
     GradientWaveBG,
     ScrollListLyrics,
+    animation_groups,
     layer_class,
 )
 from app.core.context import build_context
@@ -26,6 +27,67 @@ def test_registry_complete():
     assert set(KINDS) == {"background", "lyrics", "cover"}
     for kind, expected_types in EXPECTED.items():
         assert set(ANIM_REGISTRY[kind]) == expected_types
+
+
+@pytest.mark.parametrize("kind,categories,types", [
+    ("background", ["图片背景", "生成背景"], [
+        "static_blur", "breath_zoom", "wave_blur", "gradient_wave", "midnight",
+    ]),
+    ("lyrics", ["单行切换", "多行滚动"], [
+        "fade", "slide", "reveal", "flip_3d", "scroll_list", "arc",
+    ]),
+    ("cover", ["方形封面", "圆形封面"], [
+        "static", "breath", "float", "rock_3d", "disc_rotate", "celestial",
+    ]),
+])
+def test_animation_catalog_groups_and_default_fallback(kind, categories, types):
+    groups = animation_groups(kind)
+    assert [category for category, _ in groups] == categories
+    layers = [cls for _, items in groups for cls in items]
+    assert [cls.anim_type for cls in layers] == types
+    assert len({cls.label for cls in layers}) == len(layers)
+    assert all(cls.description for cls in layers)
+    assert layer_class(kind, "unknown").anim_type == types[0]
+    assert set(types) == EXPECTED[kind]
+
+
+def test_animation_catalog_discovers_registered_extensions(monkeypatch):
+    from app.core.anims.base import register
+
+    class CustomLayer(BaseLayer):
+        kind = "background"
+        anim_type = "custom"
+        label = "自定义效果"
+        category = "自定义背景"
+        description = "自定义效果说明。"
+        display_order = -1
+
+        def prepare(self, ctx):
+            return None
+
+        def eval(self, t, ctx):
+            return None
+
+    monkeypatch.setitem(ANIM_REGISTRY, "background", dict(ANIM_REGISTRY["background"]))
+    register("background")(CustomLayer)
+    assert animation_groups("background")[0] == ("自定义背景", (CustomLayer,))
+    assert layer_class("background", "unknown").anim_type == "static_blur"
+    assert animation_groups("unknown") == ()
+
+
+@pytest.mark.parametrize("kind,name", [
+    (kind, name) for kind, types in EXPECTED.items() for name in sorted(types)
+])
+def test_animation_catalog_preserves_project_ids_and_params(kind, name, tmp_path):
+    cls = ANIM_REGISTRY[kind][name]
+    project = KProj()
+    spec = getattr(project.animations, kind)
+    spec.type = name
+    spec.params = cls.defaults()
+    loaded = load_kproj(save_kproj(project, tmp_path / "animation.kproj"))
+    loaded_spec = getattr(loaded.animations, kind)
+    assert loaded_spec == spec
+    assert layer_class(kind, loaded_spec.type) is cls
 
 
 def test_layer_class_lookup_and_fallback():

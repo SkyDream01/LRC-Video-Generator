@@ -1,4 +1,4 @@
-"""封面动画：静态展示 / 黑胶唱片 / 呼吸缩放 / 悬浮。"""
+"""封面效果：方形封面（倒影、缩放、悬浮、摇摆）与圆形封面（黑胶、星环）。"""
 
 from __future__ import annotations
 
@@ -42,11 +42,14 @@ class CoverAssets:
 
 @register(KIND_COVER)
 class StaticCover(BaseLayer):
-    """静态展示：封面方图 + 柔和倒影（呼吸微动）。"""
+    """静态倒影：封面方图静止，柔和倒影轻微明暗变化。"""
 
     kind: ClassVar[str] = KIND_COVER
     anim_type: ClassVar[str] = "static"
-    label: ClassVar[str] = "静态展示"
+    label: ClassVar[str] = "静态倒影"
+    category: ClassVar[str] = "方形封面"
+    description: ClassVar[str] = "方形封面保持静止，下方柔和倒影缓慢明暗变化。"
+    display_order: ClassVar[int] = 0
 
     def prepare(self, ctx: RenderContext) -> CoverAssets:
         size = ctx.layout.cover_rect[2]
@@ -72,7 +75,10 @@ class DiscRotate(BaseLayer):
 
     kind: ClassVar[str] = KIND_COVER
     anim_type: ClassVar[str] = "disc_rotate"
-    label: ClassVar[str] = "黑胶唱片"
+    label: ClassVar[str] = "黑胶旋转"
+    category: ClassVar[str] = "圆形封面"
+    description: ClassVar[str] = "将封面制成带纹理的黑胶唱片，按设定转速旋转，带下方倒影。"
+    display_order: ClassVar[int] = 40
 
     @classmethod
     def params_schema(cls) -> list[ParamSpec]:
@@ -101,6 +107,8 @@ class BreathCover(StaticCover):
 
     anim_type: ClassVar[str] = "breath"
     label: ClassVar[str] = "呼吸缩放"
+    description: ClassVar[str] = "方形封面与倒影同步缓慢缩小、还原。"
+    display_order: ClassVar[int] = 10
 
     @classmethod
     def params_schema(cls) -> list[ParamSpec]:
@@ -121,7 +129,9 @@ class FloatCover(StaticCover):
     """封面与倒影沿竖直方向平滑悬浮。"""
 
     anim_type: ClassVar[str] = "float"
-    label: ClassVar[str] = "悬浮"
+    label: ClassVar[str] = "上下悬浮"
+    description: ClassVar[str] = "方形封面与倒影沿竖直方向平滑上下浮动。"
+    display_order: ClassVar[int] = 20
 
     @classmethod
     def params_schema(cls) -> list[ParamSpec]:
@@ -142,7 +152,9 @@ class Rock3DCover(StaticCover):
     """封面绕水平、竖直轴周期摇摆，始终保持正面可见。"""
 
     anim_type: ClassVar[str] = "rock_3d"
-    label: ClassVar[str] = "3D 摇摆"
+    label: ClassVar[str] = "立体摇摆"
+    description: ClassVar[str] = "方形封面绕双轴周期摇摆，保持正面可见，隐藏倒影。"
+    display_order: ClassVar[int] = 30
 
     @classmethod
     def params_schema(cls) -> list[ParamSpec]:
@@ -165,11 +177,14 @@ class CelestialCover(BaseLayer):
 
     kind: ClassVar[str] = KIND_COVER
     anim_type: ClassVar[str] = "celestial"
-    label: ClassVar[str] = "星轨齿轮"
+    label: ClassVar[str] = "星环旋转"
+    category: ClassVar[str] = "圆形封面"
+    description: ClassVar[str] = "圆形封面保持静止，外围星环与齿轮装饰缓慢旋转。"
+    display_order: ClassVar[int] = 50
 
     @classmethod
     def params_schema(cls) -> list[ParamSpec]:
-        return [ParamSpec("rpm", "光环转速 (RPM)", "float", 0.6, -3.0, 3.0)]
+        return [ParamSpec("rpm", "星环转速 (RPM)", "float", 0.6, -3.0, 3.0)]
 
     def prepare(self, ctx: RenderContext) -> CoverAssets:
         import numpy as np

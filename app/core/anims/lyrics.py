@@ -1,4 +1,4 @@
-"""歌词动画：淡入淡出 / 滚动列表 / 滑入滑出 / 横向揭幕。"""
+"""歌词动画：单行切换（淡入、滑动、显现、翻转）与多行滚动（纵向、圆弧）。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from .base import KIND_LYRICS, BaseLayer, ParamSpec, clamp, register
 
 # 主歌词与译文的垂直间距（逻辑像素）
 SUB_GAP = 18.0
-# 滚动列表换行缓动时长（毫秒）
+# 纵向滚动换行缓动时长（毫秒）
 SCROLL_MS = 350.0
 
 
@@ -153,10 +153,13 @@ class FadeLyrics(BaseLayer):
     kind: ClassVar[str] = KIND_LYRICS
     anim_type: ClassVar[str] = "fade"
     label: ClassVar[str] = "淡入淡出"
+    category: ClassVar[str] = "单行切换"
+    description: ClassVar[str] = "当前歌词与译文居中显示，在行首淡入、行尾淡出。"
+    display_order: ClassVar[int] = 0
 
     @classmethod
     def params_schema(cls) -> list[ParamSpec]:
-        return [ParamSpec("fade_ms", "淡入淡出 (ms)", "int", 400, 0, 2000)]
+        return [ParamSpec("fade_ms", "过渡时长 (ms)", "int", 400, 0, 2000)]
 
     def prepare(self, ctx: RenderContext) -> LyricsAssets:
         return build_lyrics_assets(ctx)
@@ -183,11 +186,14 @@ class FadeLyrics(BaseLayer):
 
 @register(KIND_LYRICS)
 class ScrollListLyrics(BaseLayer):
-    """滚动列表：多行可见、当前行高亮，换行时缓动滚动。"""
+    """纵向滚动：多行可见、当前行高亮，换行时缓动滚动。"""
 
     kind: ClassVar[str] = KIND_LYRICS
     anim_type: ClassVar[str] = "scroll_list"
-    label: ClassVar[str] = "滚动列表"
+    label: ClassVar[str] = "纵向滚动"
+    category: ClassVar[str] = "多行滚动"
+    description: ClassVar[str] = "多行歌词纵向排列，随时间平滑滚动，当前行居中高亮。"
+    display_order: ClassVar[int] = 40
 
     @classmethod
     def params_schema(cls) -> list[ParamSpec]:
@@ -248,7 +254,9 @@ class SlideLyrics(FadeLyrics):
     """单行歌词从下方滑入，向上滑出，短行自动压缩过渡。"""
 
     anim_type: ClassVar[str] = "slide"
-    label: ClassVar[str] = "滑入滑出"
+    label: ClassVar[str] = "上下滑动"
+    description: ClassVar[str] = "当前歌词与译文从下方滑入，向上滑出，并伴随淡入淡出。"
+    display_order: ClassVar[int] = 10
 
     @classmethod
     def params_schema(cls) -> list[ParamSpec]:
@@ -279,11 +287,13 @@ class RevealLyrics(FadeLyrics):
     """按行从左向右揭示主歌词与译文，不依赖词级时间。"""
 
     anim_type: ClassVar[str] = "reveal"
-    label: ClassVar[str] = "横向揭幕"
+    label: ClassVar[str] = "横向显现"
+    description: ClassVar[str] = "每行歌词与译文从左向右逐渐显现；显现速度由时长参数控制。"
+    display_order: ClassVar[int] = 20
 
     @classmethod
     def params_schema(cls) -> list[ParamSpec]:
-        return [ParamSpec("reveal_ms", "揭幕时长 (ms)", "int", 800, 0, 3000)]
+        return [ParamSpec("reveal_ms", "显现时长 (ms)", "int", 800, 0, 3000)]
 
     def eval(self, t: float, ctx: RenderContext) -> LyricsState:
         assets = cast(LyricsAssets, ctx.assets[KIND_LYRICS])
@@ -310,7 +320,9 @@ class Flip3DLyrics(FadeLyrics):
     """双语歌词整体透视翻入、翻出，停留期间正面展示。"""
 
     anim_type: ClassVar[str] = "flip_3d"
-    label: ClassVar[str] = "3D 翻转"
+    label: ClassVar[str] = "立体翻转"
+    description: ClassVar[str] = "当前歌词与译文整体绕水平轴翻入、翻出，停留时正面显示。"
+    display_order: ClassVar[int] = 30
 
     @classmethod
     def params_schema(cls) -> list[ParamSpec]:
@@ -341,7 +353,10 @@ class ArcLyrics(FadeLyrics):
     """沿朝向歌词区域的圆弧滚动，靠近焦点时连续放大与提亮。"""
 
     anim_type: ClassVar[str] = "arc"
-    label: ClassVar[str] = "圆弧歌词"
+    label: ClassVar[str] = "圆弧滚动"
+    category: ClassVar[str] = "多行滚动"
+    description: ClassVar[str] = "多行歌词沿封面外侧圆弧滚动，当前行放大并高亮。"
+    display_order: ClassVar[int] = 50
 
     @classmethod
     def params_schema(cls) -> list[ParamSpec]:

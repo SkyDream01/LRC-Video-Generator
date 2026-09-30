@@ -17,9 +17,9 @@
 | 工程管理 | `.kproj` JSON 工程文件的保存/加载，版本号兼容 (v1.1) |
 | 实时预览 | 预光栅化图层 + 共用 QPainter 合成；单调时钟跟音频纠漂，时间轴可 scrub |
 | 智能色彩提取 | K-Means 从封面提取主色/辅色（动画用）；歌词与描边严格使用用户所选颜色 |
-| 背景动画 | 静态模糊、渐变波浪（生成式）、波浪模糊（基于图片）、呼吸缩放 |
-| 歌词动画 | 淡入淡出（单行高亮）、滚动列表（多行高亮+缓动滚动）、滑入滑出、横向揭幕 |
-| 封面动画 | 静态展示（含倒影）、黑胶唱片旋转（含纹理+高光）、呼吸缩放、悬浮 |
+| 背景动画 | 图片背景：静态模糊、呼吸缩放、纵向漂移；生成背景：渐变流动、午夜雾光 |
+| 歌词动画 | 单行切换：淡入淡出、上下滑动、横向显现、立体翻转；多行滚动：纵向滚动、圆弧滚动 |
+| 封面动画 | 方形封面：静态倒影、呼吸缩放、上下悬浮、立体摇摆；圆形封面：黑胶旋转、星环旋转 |
 | 硬件加速 | NVIDIA NVENC / AMD AMF / Intel QSV，回退到软件编码 libx264 |
 
 ---
@@ -35,7 +35,7 @@
 | 合成 | QPainter + QImage | Qt 6 | 预览与导出共用同一套叠画；预览可转 QPixmap |
 | 音频预览 | Qt Multimedia | 随 PySide6 | QMediaPlayer 解码；时钟见 4.9，不直接当逐帧 PTS |
 | 预光栅化 | Pillow + NumPy | ≥ 10.0 | prepare：字体/描边/模糊/唱片贴图；不参与逐帧合成 |
-| 数值计算 | NumPy | ≥ 1.26 | 像素矩阵、渐变波浪、K-Means 取色；导出颜色转换由 FFmpeg 原生路径完成 |
+| 数值计算 | NumPy | ≥ 1.26 | 像素矩阵、渐变波纹、K-Means 取色；导出颜色转换由 FFmpeg 原生路径完成 |
 | 音频元数据 | Mutagen + ffprobe | mutagen ≥ 1.47 | ID3 标签；时长以 ffprobe 为准，mutagen 回退 |
 | 音频转码/封装 | FFmpeg（外部进程） | ≥ 5.0 | 音频流复制、rawvideo 编码、MKV 封装（含 ffprobe） |
 | 字体渲染 | Pillow ImageFont（FreeType 后端） | — | 加载 font/ 目录下的 TTF/OTF；仅在 prepare 阶段光栅化 |
@@ -138,9 +138,9 @@ LRC Video Generator/
 │   │   ├── encoder.py       #   ffmpeg 编码器探测 + rawvideo 管道封装
 │   │   └── anims/
 │   │       ├── base.py      #   BaseLayer：prepare / eval / params_schema / 注册表
-│   │       ├── background.py#   静态模糊 / 渐变波浪 / 波浪模糊 / 呼吸缩放
-│   │       ├── lyrics.py    #   淡入淡出 / 滚动列表 / 滑入滑出 / 横向揭幕
-│   │       └── cover.py     #   静态展示+倒影 / 黑胶唱片旋转
+│   │       ├── background.py#   图片背景 / 生成背景
+│   │       ├── lyrics.py    #   单行切换 / 多行滚动
+│   │       └── cover.py     #   方形封面 / 圆形封面
 │   ├── gui/                 # —— PySide6 界面 ——
 │   │   ├── main_window.py   #   主窗口与菜单
 │   │   ├── composite.py     #   共用 QPainter 合成（预览 + 导出）
@@ -229,8 +229,12 @@ paintEvent:
 ```python
 class BaseLayer(ABC):
     """动画层：光栅化与逐帧状态分离。"""
-    id: str
+    kind: str
+    anim_type: str
     label: str
+    category: str = "其他"
+    description: str = ""
+    display_order: int = 100
 
     @classmethod
     def params_schema(cls) -> list[ParamSpec]:
@@ -245,22 +249,47 @@ class BaseLayer(ABC):
 
 # 注册表：GUI 下拉框选项与 key 自动同步
 ANIM_REGISTRY: dict[str, dict[str, type[BaseLayer]]] = {
-    "background": {"static_blur": StaticBlurBG, "gradient_wave": GradientWaveBG, "wave_blur": WaveBlurBG, "breath_zoom": BreathZoomBG},
-    "lyrics":     {"fade": FadeLyrics, "scroll_list": ScrollListLyrics, "slide": SlideLyrics, "reveal": RevealLyrics},
-    "cover":      {"static": StaticCover, "disc_rotate": DiscRotate, "breath": BreathCover, "float": FloatCover},
+    "background": {"static_blur": StaticBlurBG, "gradient_wave": GradientWaveBG, "wave_blur": WaveBlurBG, "breath_zoom": BreathZoomBG, "midnight": MidnightBG},
+    "lyrics":     {"fade": FadeLyrics, "scroll_list": ScrollListLyrics, "slide": SlideLyrics, "reveal": RevealLyrics, "flip_3d": Flip3DLyrics, "arc": ArcLyrics},
+    "cover":      {"static": StaticCover, "disc_rotate": DiscRotate, "breath": BreathCover, "float": FloatCover, "rock_3d": Rock3DCover, "celestial": CelestialCover},
 }
 ```
 
 `.kproj` 中动画不是纯字符串，而是 `{type, params}`（见第 7 节）。切换 type 时 params 按新 schema 填默认值，未知 key 忽略。
 
+每个策略类声明中文名称 `label`、分类 `category`、效果说明 `description` 和展示顺序 `display_order`。`animation_groups(kind)` 从注册表读取这些元数据，先按展示顺序排序，再按分类聚合；GUI 生成不可选的分类标题、动画选项、悬停提示与当前效果说明。展示排序不改变注册顺序及未知 type 的默认回退行为。新增动画只需声明类元数据并注册，不修改 GUI。
+
+内置动画目录（每层按以下顺序显示）：
+
+| 层 | 分类 | 中文名称 | 稳定 type | 行为 |
+| --- | --- | --- | --- | --- |
+| background | 图片背景 | 静态模糊 | `static_blur` | 模糊图片保持静止 |
+| background | 图片背景 | 呼吸缩放 | `breath_zoom` | 模糊图片缓慢推近、拉远 |
+| background | 图片背景 | 纵向漂移 | `wave_blur` | 模糊图片整体上下漂移 |
+| background | 生成背景 | 渐变流动 | `gradient_wave` | 主色、辅色渐变波纹水平循环 |
+| background | 生成背景 | 午夜雾光 | `midnight` | 固定深蓝配色的静态雾光 |
+| lyrics | 单行切换 | 淡入淡出 | `fade` | 当前歌词与译文居中淡入、淡出 |
+| lyrics | 单行切换 | 上下滑动 | `slide` | 当前歌词与译文从下方滑入、向上滑出 |
+| lyrics | 单行切换 | 横向显现 | `reveal` | 按行从左向右显现 |
+| lyrics | 单行切换 | 立体翻转 | `flip_3d` | 双语歌词整体绕水平轴翻入、翻出 |
+| lyrics | 多行滚动 | 纵向滚动 | `scroll_list` | 多行纵向排列、当前行居中高亮 |
+| lyrics | 多行滚动 | 圆弧滚动 | `arc` | 沿封面外侧圆弧滚动、当前行放大高亮 |
+| cover | 方形封面 | 静态倒影 | `static` | 方形封面静止，倒影轻微明暗变化 |
+| cover | 方形封面 | 呼吸缩放 | `breath` | 封面与倒影同步缩小、还原 |
+| cover | 方形封面 | 上下悬浮 | `float` | 封面与倒影同步上下浮动 |
+| cover | 方形封面 | 立体摇摆 | `rock_3d` | 双轴透视摇摆，隐藏倒影 |
+| cover | 圆形封面 | 黑胶旋转 | `disc_rotate` | 带纹理黑胶唱片匀速旋转，带倒影 |
+| cover | 圆形封面 | 星环旋转 | `celestial` | 圆形封面静止，外围星环与齿轮旋转 |
+
 内置 params 示例：
 
 | 层 | type | params |
 | ---- | ------ | -------- |
-| background / gradient_wave | `speed`, `amp` | 相位速度、振幅 |
-| lyrics / scroll_list | `lines`, `ease` | 可见行数、缓动名 |
-| lyrics / fade | `fade_ms` | 淡入淡出毫秒 |
-| cover / disc_rotate | `rpm` | 转速，默认 33.3 |
+| background | `gradient_wave` | `speed` 流动速度、`amp` 波纹强度 |
+| background | `wave_blur` | `speed` 漂移速度、`amp` 漂移幅度 |
+| lyrics | `scroll_list` | `lines` 可见行数、`ease` 缓动名 |
+| lyrics | `fade` | `fade_ms` 过渡时长（毫秒） |
+| cover | `disc_rotate` | `rpm` 转速，默认 33.3 |
 
 `RenderContext` 携带：工程参数、取色结果、字体缓存、媒体资产、总时长、元数据。动画类不直接读文件。
 
@@ -468,6 +497,8 @@ Python 侧直接传递 QImage RGB32 内存视图，由 FFmpeg 的原生 scale/fi
 
 `.kproj` 为 UTF-8 JSON，媒体路径相对于工程文件目录保存（相对化失败则保留绝对路径，加载时依次尝试：相对 → 绝对 → 弹窗重选）。
 
+动画中文名称、分类和说明仅用于界面展示，不写入工程文件。重命名后的 `type`、参数 key、默认值和范围保持兼容，当前版本仍为 v1.1；例如「纵向漂移」继续使用 `wave_blur`，「圆弧滚动」继续使用 `arc`，「星环旋转」继续使用 `celestial`。
+
 ```json
 {
   "version": "1.1",
@@ -524,7 +555,7 @@ Python 侧直接传递 QImage RGB32 内存视图，由 FFmpeg 的原生 scale/fi
 
 另外两种选择：歌词 `{"type": "reveal", "params": {"reveal_ms": 800}}`；
 封面 `{"type": "float", "params": {"period": 5.0, "distance": 18.0}}`。
-揭幕按行的时间触发，主歌词与译文分别从左向右显现，并非逐词高亮。
+横向显现按行的时间触发，主歌词与译文分别从左向右显现，并非逐词高亮。
 背景缩放范围为 1 至 1+amount，居中裁切避免黑边；封面缩放范围为 1-amount 至 1。
 所有新动画复用 prepare 位图，eval 仅计算状态，共用 composite 完成裁切、缩放和位移。
 
@@ -537,14 +568,24 @@ Python 侧直接传递 QImage RGB32 内存视图，由 FFmpeg 的原生 scale/fi
 }
 ```
 
-歌词「3D 翻转」将主歌词、换行文本和译文作为整体绕水平轴翻入、翻出，
+歌词「立体翻转」将主歌词、换行文本和译文作为整体绕水平轴翻入、翻出，
 中间正面停留；短行将过渡压缩到半个行区间，过渡设为 0 时立即显示。
 角度范围 0–80 度，过渡范围 0–2000ms。
-封面「3D 摇摆」绕双轴周期摆动，角度范围 0–45 度，周期范围 1–30 秒；
+封面「立体摇摆」绕双轴周期摆动，角度范围 0–45 度，周期范围 1–30 秒；
 该效果隐藏平面倒影以免与透视封面错位。
 两者复用 prepare 的紧 bbox 位图，eval 只输出角度，composite 以 QTransform
 透视投影小图层（相机距离为图层最大尺寸的 2.5 倍），预览与导出共用。
 这属于平面贴图的 3D 透视效果，不需要额外 GPU 或 3D 引擎。
+
+生成背景、圆弧滚动与星环旋转配置示例：
+
+```json
+{
+  "background": {"type": "midnight", "params": {}},
+  "lyrics": {"type": "arc", "params": {"lines": 7, "spacing": 18.0, "transition_ms": 650}},
+  "cover": {"type": "celestial", "params": {"rpm": 0.6}}
+}
+```
 
 `layout_preset` 支持 `landscape_mv`（封面左 / 歌词右）和 `landscape_mv_reversed`（歌词左 / 封面右）。schema 预留以便后续 `portrait_9_16` 等。
 
@@ -582,9 +623,9 @@ Python 侧直接传递 QImage RGB32 内存视图，由 FFmpeg 的原生 scale/fi
 
 | 参数 | 可选值 | 说明 |
 | ------ | -------- | ------ |
-| 背景动画 | 静态模糊 / 渐变波浪 / 波浪模糊 / 呼吸缩放 | 渐变波浪为纯数学生成，不依赖图片输入 |
-| 歌词动画 | 淡入淡出 / 滚动列表 / 滑入滑出 / 横向揭幕 | 淡入淡出为单行居中，滚动列表为多行滚动高亮 |
-| 封面动画 | 静态展示 / 唱片旋转 / 呼吸缩放 / 悬浮 | 静态展示带柔和倒影，唱片旋转模拟黑胶唱片 |
+| 背景动画 | 图片背景：静态模糊 / 呼吸缩放 / 纵向漂移；生成背景：渐变流动 / 午夜雾光 | 生成背景不依赖图片；午夜雾光使用固定配色 |
+| 歌词动画 | 单行切换：淡入淡出 / 上下滑动 / 横向显现 / 立体翻转；多行滚动：纵向滚动 / 圆弧滚动 | 单行切换整体显示当前主歌词和译文；多行滚动突出当前行 |
+| 封面动画 | 方形封面：静态倒影 / 呼吸缩放 / 上下悬浮 / 立体摇摆；圆形封面：黑胶旋转 / 星环旋转 | 立体摇摆隐藏倒影；星环旋转只旋转外围装饰 |
 
 各 type 的数值参数由 `params_schema` 生成，写入 `animations.*.params`，不在 GUI 里写死。
 
@@ -633,19 +674,19 @@ core 测试不依赖 Qt。composite 金帧单独标记，FreeType/Qt 版本差�
 
 ### 动画平滑与边界约定
 
-淡入淡出、滑入、翻转使用端点速度为零的透明度曲线；短句过渡最多占半个行区间，确保中点完全可读。揭幕使用平滑曲线并在行尾短暂淡出；过渡参数为 0 时立即显示。所有歌词动画在音频结束后隐藏。
+淡入淡出、上下滑动、立体翻转使用端点速度为零的透明度曲线；短句过渡最多占半个行区间，确保中点完全可读。横向显现使用平滑曲线并在行尾短暂淡出；过渡参数为 0 时立即显示。所有歌词动画在音频结束后隐藏。
 
-滚动列表与圆弧动画按当前行长度压缩换行时间，避免密集时间戳导致位置跳变；首行从中心开始，列表边缘连续渐隐。滚动行距同时考虑实际双语和换行位图高度，避免文字相互覆盖。
+纵向滚动与圆弧滚动按当前行长度压缩换行时间，避免密集时间戳导致位置跳变；首行从中心开始，列表边缘连续渐隐。滚动行距同时考虑实际双语和换行位图高度，避免文字相互覆盖。
 
-渐变波浪的 `amp` 控制缓存亮度波纹强度（0 为静止渐变），`speed` 保持原相位速度语义；波浪模糊按实际位图留白限制位移，避免边缘越界。上述优化保持现有参数 schema 和第 7 节工程示例兼容。
+渐变流动的 `amp` 控制缓存亮度波纹强度（0 为静止渐变），`speed` 保持原相位速度语义；纵向漂移按实际位图留白限制位移，避免边缘越界。上述优化保持现有参数 schema 和第 7 节工程示例兼容。
 
-合成器共用平滑贴图和边缘抗锯齿，透明歌词跳过绘制，完全揭幕的歌词直接绘制缓存位图，减少每帧裁切开销。封面呼吸、悬浮、双轴摇摆保持周期连续，唱片与星轨保持匀速旋转。
+合成器共用平滑贴图和边缘抗锯齿，透明歌词跳过绘制，完全显现的歌词直接绘制缓存位图，减少每帧裁切开销。呼吸缩放、上下悬浮、立体摇摆保持周期连续，黑胶与星环保持匀速旋转。
 
 ### 自定义左右布局
 
 输出面板提供「左右布局」（封面左 / 歌词右，或歌词左 / 封面右），以及封面、歌词各自的水平偏移（逻辑像素，负数左移、正数右移）。偏移后的静态区域限制在画布内，允许用户自行安排重叠。布局统一由 core 的 compute_layout 计算，预览与导出共用。
 
-所有动画使用偏移后的布局矩形。圆弧歌词按两个区域中心的实际左右关系选择朝向：歌词在右时以左边缘内缩 12px 为锚点、主词和译文左对齐，在左时以右边缘内缩 12px 为锚点、主词和译文右对齐；仅镜像圆弧几何和倾角，不镜像文字。中心重合时采用向右方向；圆弧半径使用歌词锚点与封面中心的水平距离，独立偏移后重新计算。封面旋转、透视、倒影和星轨均以实际封面中心定位。歌词裁剪与调用方预览裁剪取交集。
+所有动画使用偏移后的布局矩形。圆弧滚动按两个区域中心的实际左右关系选择朝向：歌词在右时以左边缘内缩 12px 为锚点、主词和译文左对齐，在左时以右边缘内缩 12px 为锚点、主词和译文右对齐；仅镜像圆弧几何和倾角，不镜像文字。中心重合时采用向右方向；圆弧半径使用歌词锚点与封面中心的水平距离，独立偏移后重新计算。封面旋转、透视、倒影和星环均以实际封面中心定位。歌词裁剪与调用方预览裁剪取交集。
 
 `.kproj` 的 `output` 增加 `cover_offset_x: 0`、`lyrics_offset_x: 0`；`layout_preset` 支持 `landscape_mv_reversed`，默认仍为 `landscape_mv`。旧工程缺失偏移字段时取 0。
 

@@ -115,13 +115,13 @@ composite(painter, state, assets)
 动画采用策略类和注册表。新增一个内置动画时：
 
 1. 在 `app/core/anims/` 合适的模块中创建 `BaseLayer` 子类。
-2. 设置 `kind`、`anim_type` 和用户可见的 `label`。
+2. 设置 `kind`、稳定的 `anim_type` 和用户可见的 `label`，声明分类 `category`、效果说明 `description`、展示顺序 `display_order`。
 3. 实现 `prepare(ctx)` 和纯 `eval(t, ctx)`。
 4. 有参数时实现 `params_schema()`，通过 `ParamSpec` 声明类型、默认值、范围或选项。
 5. 用 `@register(KIND_...)` 注册，并在 `app/core/anims/__init__.py` 导入模块/类，使注册表在启动时填充。
 6. 为注册表、参数收敛、`eval` 确定性和关键帧行为补 pytest；如果 schema 变化，同步工程示例和格式文档。
 
-GUI 的动画下拉框和参数控件会读取 `ANIM_REGISTRY` 与 `params_schema`，不要在 GUI 中为某一种动画硬编码参数。
+GUI 的动画下拉框通过 `animation_groups(kind)` 按策略类元数据分组排序，分类标题不可选；说明与参数控件读取 `description` 和 `params_schema`。不要在 GUI 中为某一种动画硬编码分类、说明或参数。展示顺序独立于注册顺序；中文重命名保留 `anim_type` 与参数 key，保证已有工程兼容。完整动画目录见 `DESIGN.md` §4.5。
 
 ## 工程模型变更
 
